@@ -1,0 +1,2095 @@
+---
+title: "Análisis de datos GLM"
+author: "Matías Valenzuela Nuche"
+lang: es
+date: last-modified
+date-format: long
+
+format:
+  html:
+    theme:
+      light: flatly
+      dark: darkly
+    page-layout: article
+    toc: true
+    toc-location: left
+    toc-title: "Contenido"
+    toc-depth: 3
+    toc-expand: 2
+    number-sections: true
+    number-depth: 3
+    smooth-scroll: true
+    embed-resources: true
+    fig-cap-location: bottom
+    tbl-cap-location: top
+    code-fold: true
+    code-tools:
+      source: true      # solo mostrar “Ver fuente”
+      toggle: false     # sin “Hide/Show All Code”
+      caption: "Código fuente" # etiqueta del botón (opcional)
+    code-line-numbers: true
+    code-link: true
+    highlight-style: atom-one
+    html-math-method: katex
+    link-external-icon: true
+    link-external-newwindow: true
+    css: "css/styles.css"
+
+title-block-banner: true
+editor: visual
+---
+
+```{r}
+#| label: setup
+#| include: false
+#| cache: false
+
+set.seed(1223) # reproducibilidad
+
+# Paquetes
+pacman::p_load(
+    tidyverse,  # Carga ggplot2, dplyr, tidyr, readr, forcats, etc.
+    broom,      # Para la función tidy() en los modelos
+    kableExtra, # Para las tablas bonitas con kbl()
+    ggrepel,    # Para las etiquetas en el gráfico de Mahalanobis
+    knitr,      # Para que funcione kbl()
+    car,        # Para la función vif()
+    GGally,     # Para la función ggpairs()
+    moments,    # Para skewness() y kurtosis()
+    pROC,       # Para las curvas ROC (roc(), auc(), coords())
+    MASS,       # Para la función glm.nb()
+    patchwork,  # Para combinar gráficos (ej. p_hist + p_box)
+    ISLR        # Para la base de datos Weekly
+)
+
+# Bases de datos
+datos_1 <- read_csv("fishing.csv")
+datos_2 <- ISLR::Weekly
+
+
+# Utilidades
+pretty_tibble <- function(data, 
+                          n = 10, 
+                          show_types = TRUE,
+                          color_scheme = list(
+                            chr = "#FF6B6B",      # Rojo para character
+                            dbl = "#4ECDC4",      # Turquesa para double
+                            int = "#45B7D1",      # Azul para integer
+                            lgl = "#96CEB4",      # Verde para logical
+                            fct = "#FFEAA7",      # Amarillo para factor
+                            date = "#DDA15E",     # Naranja para date
+                            default = "#95A5A6"   # Gris para otros
+                          ),
+                          title_color = "#2C3E50",
+                          header_color = "#34495E") {
+  
+  # Obtener dimensiones
+  n_rows <- nrow(data)
+  n_cols <- ncol(data)
+  
+  # Limitar filas a mostrar
+  data_display <- head(data, n)
+  rows_hidden <- max(0, n_rows - n)
+  
+  # Obtener tipos de variables
+  col_types <- sapply(data, function(x) class(x)[1])
+  
+  # Agregar fila de tipos si se solicita
+  if (show_types) {
+    # Crear fila de tipos con HTML
+    tipos_coloreados <- sapply(seq_along(col_types), function(i) {
+      tipo <- col_types[i]
+      color <- color_scheme[[tipo]]
+      if (is.null(color)) color <- color_scheme$default
+      
+      paste0("<div style='text-align: center;'>",
+             "<span style='background-color:", color, 
+             "; padding: 2px 8px; border-radius: 3px; ",
+             "font-weight: bold; color: white; font-size: 10px; ",
+             "display: inline-block;'>",
+             "&lt;", tipo, "&gt;</span></div>")
+    })
+    
+    # Agregar nombres de columnas con tipos
+    col_names_with_types <- paste0(
+      "<div style='font-weight: bold; margin-bottom: 4px;'>", 
+      names(data), 
+      "</div>", 
+      tipos_coloreados
+    )
+    
+    names(data_display) <- col_names_with_types
+  }
+  
+  # Crear tabla base
+  tabla <- data_display %>%
+    kbl(format = "html", escape = FALSE) %>%
+    kable_styling(
+      bootstrap_options = c("striped", "hover", "condensed"),
+      full_width = FALSE,
+      position = "left",
+      font_size = 13
+    )
+  
+  # Agregar título con dimensiones
+  dim_text <- paste0("# A tibble: ", n_rows, " × ", n_cols)
+  tabla <- tabla %>%
+    add_header_above(
+      setNames(n_cols, dim_text),
+      background = title_color,
+      color = "white",
+      bold = TRUE,
+      font_size = 14,
+      align = "left"
+    )
+  
+  # Estilizar encabezados de columna
+  tabla <- tabla %>%
+    row_spec(0, 
+             background = header_color, 
+             color = "white", 
+             extra_css = "border-top: 2px solid #2C3E50; vertical-align: middle;")
+  
+  # Agregar nota de filas ocultas si aplica
+  if (rows_hidden > 0) {
+    nota <- paste0("# … ", rows_hidden, " more rows")
+    tabla <- tabla %>%
+      add_footnote(nota, notation = "none", escape = TRUE)
+  }
+  
+  # Agregar bordes
+  tabla <- tabla %>%
+    column_spec(1:n_cols, border_right = "1px solid #ECF0F1")
+  
+  return(tabla)
+}
+```
+
+# Análisis del conjunto de datos "Fishing"
+
+En esta sección, se realiza un análisis exhaustivo del conjunto de datos `fishing.csv`, que contiene 147 observaciones sobre la abundancia de peces y características del hábitat. El objetivo es preparar los datos para el modelado y comprender en profundidad las propiedades de las variables y sus interrelaciones.
+
+## Carga y preparación de los Datos
+
+El primer paso consiste en cargar los datos y realizar una limpieza inicial para asegurar su calidad y pertinencia para el análisis. A continuación, se muestra una vista inicial de los datos.
+
+```{r}
+#| label: tabla-datos
+#| warning: false
+#| message: false
+
+pretty_tibble(datos_1, n = 5)
+```
+
+Se observa la presencia de las columnas `...1` y `site`. Se procede a investigar si contienen información relevante o si pueden ser descartadas.
+
+```{r}
+#| warning: false
+#| message: false
+
+n_filas <- nrow(datos_1)
+
+res_unicidad <- tibble(
+  columna   = c("...1", "site"),
+  distintos = c(n_distinct(datos_1$`...1`), n_distinct(datos_1$site)),
+  sin_NA    = c(!anyNA(datos_1$`...1`), !anyNA(datos_1$site))
+)
+
+pretty_tibble(res_unicidad)
+```
+
+El análisis de unicidad revela que `...1` y `site` tienen tantos valores distintos como filas, sugiriendo que actúan como identificadores únicos sin valor predictivo para un modelo general. Por lo tanto, se eliminan del conjunto de datos.
+
+```{r}
+#| warning: false
+#| message: false
+#| label: tabla-datos-final
+
+datos_1 <- datos_1 %>% dplyr::select(!c("...1", "site"))
+
+pretty_tibble(datos_1, n = 5)
+```
+
+Finalmente, se confirma que no existen valores ausentes (`NA`) en las variables de interés.
+
+```{r}
+#| warning: false
+#| message: false
+
+print(colSums(is.na(datos_1)))
+```
+
+------------------------------------------------------------------------
+
+## Análisis exploratorio de datos (EDA)
+
+El propósito del EDA es obtener una comprensión intuitiva de los datos. Se investigará la distribución de cada variable (análisis univariado) y las relaciones entre ellas (análisis bivariado). Este paso es crucial para guiar la selección del modelo y diagnosticar posibles problemas como la sobredispersión o la multicolinealidad.
+
+### Análisis univariado
+
+Se analiza cada variable individualmente para entender su distribución, tendencia central, dispersión y la presencia de valores atípicos. Esto nos ayudará a comprender las características inherentes de nuestra variable de respuesta y de los predictores.
+
+------------------------------------------------------------------------
+
+#### Variable de respuesta: `totabund` (Total de peces)
+
+`totabund` es la variable de interés principal y representa el conteo total de peces por lance o muestra.
+
+```{r}
+#| label: aed-totabund
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas de la abundancia total de peces."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_1 %>%
+ summarise(
+ Min = min(totabund),
+ `1st Qu.` = quantile(totabund, 0.25),
+ Median = median(totabund),
+ Mean = mean(totabund),
+ `3rd Qu.` = quantile(totabund, 0.75),
+ Max = max(totabund),
+ Var = var(totabund),
+ SD = sd(totabund),
+ Skewness = moments::skewness(totabund),
+ Kurtosis = moments::kurtosis(totabund)
+ )
+
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-totabund
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución de la abundancia total de peces."
+#| echo: false
+
+# --- 2. Gráfico de Distribución ---
+
+mean_val <- mean(datos_1$totabund)
+median_val <- median(datos_1$totabund)
+
+p_hist <- ggplot(datos_1, aes(x = totabund)) +
+ geom_histogram(aes(y = after_stat(density)), bins = 20, fill = "#4E79A7", color = "white", alpha = 0.8) +
+ geom_density(fill = "#F28E2B", color = "#F28E2B", alpha = 0.4, linewidth = 1) +
+ geom_vline(aes(xintercept = mean_val, color = "Media"), linetype = "dashed", size = 1) +
+ geom_vline(aes(xintercept = median_val, color = "Mediana"), linetype = "dotted", size = 1) +
+ scale_color_manual(name = "Estadísticos", values = c("Media" = "red", "Mediana" = "blue")) +
+ labs(title = "Distribución de Abundancia Total de Peces", x = "totabund", y = "Densidad") +
+ theme_minimal(base_size = 12) +
+ theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), legend.position = "bottom")
+
+p_box <- ggplot(datos_1, aes(x = totabund)) +
+ geom_boxplot(fill = "#4E79A7", alpha = 0.7, width = 0.3, outlier.colour = "#E15759", outlier.shape = 18, outlier.size = 2.5) +
+ theme_void()
+
+p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
+```
+
+**Interpretación de `totabund`:**
+
+El histograma y el diagrama de caja revelan un patrón clásico en datos ecológicos de conteo:
+
+-   **Agregación de datos:** La gran mayoría de las muestras (lances) tienen un número bajo de peces (la barra más alta está cerca de cero). Sin embargo, existen unas pocas muestras con una abundancia extremadamente alta (la cola larga a la derecha).
+-   **Asimetría Positiva Fuerte (Sesgo a laDerecha):** Este patrón visual se confirma estadísticamente. La **media (216.05)** es arrastrada hacia la derecha por esos valores altos, siendo notablemente mayor que la **mediana (155)**, que representa mejor el "lance típico". El coeficiente de asimetría positivo (**1.83**) lo corrobora. Biológicamente, esto es esperable: los peces a menudo se agrupan en cardúmenes, llevando a muchos lances con pocos peces y unos pocos lances "muy exitosos".
+-   **Sobredispersión Evidente:** La **varianza (48656.52)** es órdenes de magnitud mayor que la **media (216.05)**. Esta es una clara señal de **sobredispersión**, un fenómeno donde la variabilidad de los datos es mucho mayor de lo que se esperaría (por ejemplo, en un modelo de Poisson). Esto refuerza la idea de que los eventos (capturar peces) no son independientes y homogéneos; están agrupados.
+-   **Implicación para el Modelo:** Un modelo de regresión lineal simple no sería apropiado. La naturaleza de los datos (conteos enteros, asimétricos y sobredispersos) sugiere la necesidad de un Modelo Lineal Generalizado (GLM), como uno basado en la **distribución Binomial Negativa**, que está diseñado para manejar la sobredispersión.
+
+------------------------------------------------------------------------
+
+#### Variable `meandepth` (Profundidad media)
+
+Esta variable representa la profundidad promedio del área de muestreo.
+
+```{r}
+#| label: aed-meandepth
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas de la profundidad media."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_1 %>%
+ summarise(
+ Min = min(meandepth),
+ `1st Qu.` = quantile(meandepth, 0.25),
+ Median = median(meandepth),
+ Mean = mean(meandepth),
+ `3rd Qu.` = quantile(meandepth, 0.75),
+ Max = max(meandepth),
+ Var = var(meandepth),
+ SD = sd(meandepth),
+ Skewness = moments::skewness(meandepth),
+ Kurtosis = moments::kurtosis(meandepth)
+ )
+
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-meandepth
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución de la profundidad media."
+#| echo: false
+
+# --- 2. Gráfico de Distribución ---
+
+mean_val <- mean(datos_1$meandepth)
+median_val <- median(datos_1$meandepth)
+
+p_hist <- ggplot(datos_1, aes(x = meandepth)) +
+ geom_histogram(aes(y = after_stat(density)), bins = 20, fill = "#4E79A7", color = "white", alpha = 0.8) +
+ geom_density(fill = "#F28E2B", color = "#F28E2B", alpha = 0.4, linewidth = 1) +
+ geom_vline(aes(xintercept = mean_val, color = "Media"), linetype = "dashed", size = 1) +
+ geom_vline(aes(xintercept = median_val, color = "Mediana"), linetype = "dotted", size = 1) +
+ scale_color_manual(name = "Estadísticos", values = c("Media" = "red", "Mediana" = "blue")) +
+ labs(title = "Distribución de la Profundidad Media", x = "meandepth", y = "Densidad") +
+ theme_minimal(base_size = 12) +
+ theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), legend.position = "bottom")
+
+p_box <- ggplot(datos_1, aes(x = meandepth)) +
+ geom_boxplot(fill = "#4E79A7", alpha = 0.7, width = 0.3, outlier.colour = "#E15759", outlier.shape = 18, outlier.size = 2.5) +
+ theme_void()
+
+p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
+```
+
+**Interpretación de `meandepth`:**
+
+-   **Distribución Bimodal o Multimodal:** A diferencia de `totabund`, esta variable no tiene una simple cola. El histograma y la curva de densidad (naranja) sugieren al menos **dos grupos principales** de muestreo: un grupo grande en aguas menos profundas (aprox. 1000-2500 m) y un segundo grupo en aguas más profundas (aprox. 4000-5000 m).
+-   **Alta Variabilidad:** La desviación estándar (**1254.6**) es alta, reflejando este amplio rango de profundidades muestreadas. Los datos están muy dispersos, cubriendo desde zonas relativamente someras hasta abisales.
+-   **Asimetría Moderada:** Aunque la **media (2413.1)** es mayor que la **mediana (1993)**, el coeficiente de asimetría (**0.66**) no es tan extremo. Esto se debe a la compleja forma de la distribución, no solo a una cola.
+-   **Distribución Plana (Platicúrtica):** El coeficiente de curtosis (**2.11**) es menor que 3 (el de una distribución normal). Esto confirma visualmente lo que vemos: la distribución es más plana y extendida, con "hombros anchos" en lugar de un pico agudo, lo cual es consistente con la presencia de múltiples modas.
+
+------------------------------------------------------------------------
+
+#### Variable `sweptarea` (Área barrida)
+
+Esta variable es una medida del esfuerzo de muestreo; el área que cubrió el instrumento de recolección (ej. la red de arrastre).
+
+```{r}
+#| label: aed-sweptarea
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas del área barrida."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_1 %>%
+ summarise(
+ Min = min(sweptarea),
+ `1st Qu.` = quantile(sweptarea, 0.25),
+ Median = median(sweptarea),
+ Mean = mean(sweptarea),
+ `3rd Qu.` = quantile(sweptarea, 0.75),
+ Max = max(sweptarea),
+ Var = var(sweptarea),
+ SD = sd(sweptarea),
+ Skewness = moments::skewness(sweptarea),
+ Kurtosis = moments::kurtosis(sweptarea)
+ )
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-sweptarea
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución del área barrida."
+#| echo: false
+
+# --- 2. Gráfico de Distribución ---
+
+mean_val <- mean(datos_1$sweptarea)
+median_val <- median(datos_1$sweptarea)
+
+p_hist <- ggplot(datos_1, aes(x = sweptarea)) +
+ geom_histogram(aes(y = after_stat(density)), bins = 20, fill = "#4E79A7", color = "white", alpha = 0.8) +
+ geom_density(fill = "#F28E2B", color = "#F28E2B", alpha = 0.4, linewidth = 1) +
+ geom_vline(aes(xintercept = mean_val, color = "Media"), linetype = "dashed", size = 1) +
+ geom_vline(aes(xintercept = median_val, color = "Mediana"), linetype = "dotted", size = 1) +
+ scale_color_manual(name = "Estadísticos", values = c("Media" = "red", "Mediana" = "blue")) +
+ labs(title = "Distribución del Área Barrida", x = "sweptarea", y = "Densidad") +
+ theme_minimal(base_size = 12) +
+ theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), legend.position = "bottom")
+
+p_box <- ggplot(datos_1, aes(x = sweptarea)) +
+ geom_boxplot(fill = "#4E79A7", alpha = 0.7, width = 0.3, outlier.colour = "#E15759", outlier.shape = 18, outlier.size = 2.5) +
+ theme_void()
+
+p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
+```
+
+**Interpretación de `sweptarea`:**
+
+-   **Esfuerzo de Muestreo Mayormente Consistente:** La mayoría de los lances cubrieron un área similar, concentrada alrededor de la **mediana (54420)**. Esto se ve en el pico agudo del histograma.
+-   **Asimetría por Muestreos Atípicos:** Al igual que con `totabund`, hay una fuerte asimetría positiva (**Skewness = 1.57**). La **media (**$\approx 64800$) es jalada hacia la derecha por unos pocos lances que cubrieron un área mucho mayor (la cola derecha y los puntos atípicos).
+-   **Distribución Picuda (Leptocúrtica):** El coeficiente de curtosis (**6.38**) es alto (mayor a 3), confirmando que la distribución está más "picuda" y concentrada que una normal. Esto se debe a la estandarización de la mayoría de los lances.
+-   **Implicación para el Modelo:** Dado que esta variable representa el esfuerzo de muestreo, es poco probable que sea un predictor directo (no esperamos que "más área barrida" *cause* más peces *per se*). Es más probable que se utilice como un **"offset"** (exposición) en el modelo GLM. Esto permite estandarizar la abundancia, transformando nuestra variable de respuesta de "total de peces" a "peces por unidad de área".
+
+------------------------------------------------------------------------
+
+#### Variable `density` (Densidad de follaje)
+
+Esta variable describe una característica del hábitat, posiblemente la densidad de vegetación o coral en el fondo marino.
+
+```{r}
+#| label: aed-density
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas de la densidad de follaje."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_1 %>%
+ summarise(
+ Min = min(density),
+ `1st Qu.` = quantile(density, 0.25),
+ Median = median(density),
+ Mean = mean(density),
+ `3rd Qu.` = quantile(density, 0.75),
+ Max = max(density),
+ Var = var(density),
+ SD = sd(density),
+ Skewness = moments::skewness(density),
+ Kurtosis = moments::kurtosis(density)
+ )
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-density
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución de la densidad de follaje."
+#| echo: false
+
+# --- 2. Gráfico de Distribución ---
+
+mean_val <- mean(datos_1$density)
+median_val <- median(datos_1$density)
+
+p_hist <- ggplot(datos_1, aes(x = density)) +
+  geom_histogram(aes(y = after_stat(density)), bins = 20, fill = "#4E79A7", color = "white", alpha = 0.8) +
+  geom_density(fill = "#F28E2B", color = "#F28E2B", alpha = 0.4, linewidth = 1) +
+  geom_vline(aes(xintercept = mean_val, color = "Media"), linetype = "dashed", size = 1) +
+  geom_vline(aes(xintercept = median_val, color = "Mediana"), linetype = "dotted", size = 1) +
+  scale_color_manual(name = "Estadísticos", values = c("Media" = "red", "Mediana" = "blue")) +
+  labs(title = "Distribución de la Densidad de Follaje", x = "density", y = "Densidad") +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), legend.position = "bottom")
+
+p_box <- ggplot(datos_1, aes(x = density)) +
+  geom_boxplot(fill = "#4E79A7", alpha = 0.7, width = 0.3, outlier.colour = "#E15759", outlier.shape = 18, outlier.size = 2.5) +
+  theme_void()
+
+p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
+```
+
+**Interpretación de `density`:**
+
+-   **Distribución de "Hábitat en Parches":** La distribución es muy similar a la de `totabund`. La gran mayoría de los sitios muestreados tienen una densidad de follaje muy baja, cercana a cero. Unos pocos sitios tienen una densidad significativamente más alta (la cola derecha y los puntos atípicos).
+-   **Asimetría Positiva Fuerte:** Esto es esperable en hábitats que ocurren en "parches". La **media (**$\approx 0.0047$) es casi el doble que la **mediana (**$\approx 0.0026$), y el coeficiente de asimetría (**1.93**) es muy alto.
+-   **Distribución muy Picuda (Leptocúrtica):** El altísimo coeficiente de curtosis (**7.20**) confirma el pico agudo en cero y la presencia de colas "pesadas" (los outliers), que son los pocos sitios con alta densidad de follaje.
+-   **Implicación para el Modelo:** Esta variable probablemente será un predictor importante. Dado su fuerte sesgo, es posible que deba ser transformada (por ejemplo, con logaritmos) antes de incluirla en el modelo, o que su influencia sea no lineal.
+
+------------------------------------------------------------------------
+
+#### Variable `period` (Periodo de estudio)
+
+```{r}
+#| label: aed-period-categorical
+#| warning: false
+#| message: false
+
+# --- 1. Tabla de Frecuencias ---
+# Contamos cuántas veces aparece cada categoría
+stats_summary <- datos_1 %>%
+  count(period, sort = TRUE) %>%
+  mutate(Porcentaje = (n / sum(n)) * 100)
+
+# Mostramos la tabla de frecuencias
+# (Usamos 'print' en lugar de 'pretty_tibble' para este formato)
+pretty_tibble(stats_summary, n = 2, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-period-categorical
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución de las categorías de 'period'."
+#| echo: false
+
+# --- 2. Gráfico de Barras ---
+
+# Mapeamos 'fill = period' para asignar un color a cada barra
+ggplot(datos_1, aes(x = fct_infreq(period), fill = period)) + 
+  geom_bar(alpha = 0.8) +
+  geom_text(stat='count', aes(label = after_stat(count)), vjust = -0.5) + 
+  
+  # Añadimos los colores del gráfico de pares (rojo/coral y azul/teal)
+  scale_fill_manual(values = c("1977-1989" = "#E15759", "2000-2002" = "#76B7B2")) + 
+  
+  labs(title = "Distribución de 'Period'", x = "Periodo", y = "Frecuencia (Conteo)") +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+    legend.position = "none" # Ocultamos la leyenda por ser redundante
+  )
+```
+
+**Interpretación de `period` (como variable categórica):**
+
+-   **Balance de Datos:** El objetivo principal aquí es ver si las muestras están *balanceadas*. En este caso, observamos un **desbalance**.
+-   **Sesgo de Muestreo:** El periodo **'1977-1989'** domina el conjunto de datos con **97** observaciones (aproximadamente **66%**), mientras que el periodo **'2000-2002'** tiene **50** observaciones (aproximadamente **34%**).
+-   **Implicaciones:** Aunque no hay categorías "raras" (ambos grupos tienen suficientes datos para análisis), el modelo estará más influenciado por los datos del primer periodo ('1977-1989').
+
+------------------------------------------------------------------------
+
+### Análisis de valores atípicos (Outliers)
+
+Los valores atípicos pueden influir significativamente en el ajuste del modelo. Se utiliza el método del Rango Intercuartílico (IQR) para identificarlos formalmente.
+
+```{r}
+#| label: aed-outliers
+#| warning: false
+#| message: false
+
+# Función para detectar outliers usando el método IQR
+detect_outliers <- function(x) {
+ q1 <- quantile(x, 0.25, na.rm = TRUE)
+ q3 <- quantile(x, 0.75, na.rm = TRUE)
+ iqr <- q3 - q1
+ lower_bound <- q1 - 1.5 * iqr
+ upper_bound <- q3 + 1.5 * iqr
+
+ outliers <- x[x < lower_bound | x > upper_bound]
+ return(outliers)
+}
+
+# Lista de variables a analizar
+variables_a_analizar <- c("totabund", "meandepth", "sweptarea", "density")
+
+# Aplicar a las variables de interés
+outlier_list <- lapply(datos_1[variables_a_analizar], detect_outliers)
+
+# Crear tabla de resumen de outliers
+outlier_summary <- tibble(
+ Variable = names(outlier_list),
+ `Número de Outliers` = sapply(outlier_list, length),
+ `% de Outliers` = (sapply(outlier_list, length) / nrow(datos_1)) * 100
+)
+
+# Mostrar tabla con pretty_tibble
+pretty_tibble(outlier_summary)
+```
+
+**Interpretación del Análisis de Outliers:**
+
+-   **`totabund` (7.48% outliers):** Estos **11** valores atípicos no son errores, sino la manifestación estadística del comportamiento de agregación (cardúmenes) que causa la **sobredispersión**. Son los lances "exitosos" que capturaron un cardumen. **No deben eliminarse**, ya que son biológicamente cruciales. Un modelo Binomial Negativo es ideal porque puede manejar estos valores extremos sin que distorsionen los resultados.
+-   **`sweptarea` (3.40% outliers):** Los **5** valores atípicos representan los lances donde el esfuerzo de muestreo fue inusualmente grande. Su presencia justifica el uso de esta variable como un "offset" (exposición) para estandarizar los conteos, en lugar de usarla como un predictor lineal directo.
+-   **`density` (5.44% outliers):** Similar a `totabund`, estos **8** outliers representan los "parches" de hábitat de alta densidad que son raros pero ecológicamente importantes.
+-   **`meandepth` (0% outliers):** La ausencia de valores atípicos aquí es notable. Confirma que, aunque el rango de profundidades es muy amplio (ver `SD = 1254.6`), la distribución es extendida (bimodal) y no tiene valores extremos inesperados en las colas. Todos los puntos de datos caen dentro de un rango "esperado" por el criterio IQR.
+
+------------------------------------------------------------------------
+
+### Análisis bivariado
+
+Se examina la relación entre pares de variables para identificar patrones de asociación y posible multicolinealidad entre los predictores.
+
+```{r}
+#| label: aed-correlacion
+#| warning: false
+#| message: false
+#| fig-cap: "Matriz de análisis de pares de las variables, coloreada por periodo."
+
+
+# 1. Preparar los datos para el gráfico
+datos_ggpairs <- datos_1 %>%
+    dplyr::select(totabund, meandepth, sweptarea, density, period) %>%
+    dplyr::mutate(period = as.factor(period))
+
+# 2. Generar la matriz de pares con ggpairs
+ggpairs(
+    datos_ggpairs,
+    mapping = aes(color = period, fill = period),
+    title = "Análisis Cruzado de Variables",
+    diag = list(
+        continuous = wrap("densityDiag", alpha = 0.6)
+    ),
+    lower = list(
+        continuous = wrap("points", alpha = 0.7, size = 2)
+    ),
+    upper = list(
+        # 'wrap("cor"...)' calcula la correlación general (no por grupo)
+        continuous = wrap("cor", size = 2.5, alignPercent = 0.8) 
+    ),
+    # Añadimos los colores del gráfico de pares (rojo/coral y azul/teal)
+    # Nota: esto requiere re-mapear 'period' manualmente
+) +
+theme_minimal(base_size = 10) +
+theme(
+    plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+    axis.text = element_text(size = 8), 
+    strip.text = element_text(size = 10, face = "bold")
+) +
+# Aplicar los colores manualmente para que coincidan con la imagen
+scale_color_manual(values = c("1977-1989" = "#E15759", "2000-2002" = "#76B7B2")) +
+scale_fill_manual(values = c("1977-1989" = "#E15759", "2000-2002" = "#76B7B2"))
+```
+
+La matriz de gráficos de pares ofrece las siguientes percepciones:
+
+-   **Relación con `totabund`**:
+
+    -   `density` muestra una **correlación positiva extremadamente fuerte** con `totabund` (**r = 0.947**\*). Los diagramas de dispersión (`(fila 4, col 1)`) muestran una clara relación lineal positiva.
+    -   `meandepth` tiene una **correlación negativa moderada-fuerte** (**r = -0.554**\*), indicando una tendencia a encontrar menos peces en aguas más profundas.
+    -   `sweptarea` tiene una **correlación negativa moderada** (**r = -0.378**\*) con la abundancia de peces.
+
+-   **Correlación entre predictores (Multicolinealidad)**:
+
+    -   La correlación más alta entre las variables predictoras es entre `meandepth` y `sweptarea` (**r = 0.731**\*).
+    -   También existen otras correlaciones significativas entre predictores, como `meandepth` y `density` (**r = -0.582**\*) y `sweptarea` y `density` (**r = -0.499**\*).
+    -   **Conclusión**: Estos valores, especialmente el $r = 0.731$ entre `meandepth` y `sweptarea`, **sí sugieren problemas potenciales de multicolinealidad** que deberán ser evaluados (por ejemplo, con VIF) antes del ajuste final del modelo.
+
+------------------------------------------------------------------------
+
+#### Análisis de multicolinealidad (VIF)
+
+Para confirmar formalmente el grado de multicolinealidad, se calculan los Factores de Inflación de la Varianza (VIF). Un VIF mide cuánto se infla la varianza de un coeficiente de regresión estimado debido a la colinealidad con otras variables.
+
+```{r}
+#| label: aed-vif
+#| warning: false
+#| message: false
+
+# Para calcular el VIF, se necesita un modelo lineal.
+# Usamos un modelo lineal temporal solo para este propósito.
+vif_model <- lm(totabund ~ meandepth + sweptarea + density, data = datos_1)
+
+# Calcular los valores VIF
+vif_values <- car::vif(vif_model)
+
+# Crear una tabla para mostrar los resultados
+vif_table <- tibble(
+  Variable = names(vif_values),
+  VIF = vif_values
+)
+
+pretty_tibble(vif_table)
+```
+
+Los resultados del VIF son los siguientes: `meandepth` (2.481), `sweptarea` (2.184) y `density` (1.540).
+
+Aunque estos valores no son "cercanos a 1", todos se encuentran **muy por debajo del umbral problemático** comúnmente aceptado de 5 (o 10). Esto confirma que, si bien existe *cierta* correlación entre los predictores (como se vio en la matriz de pares), **no hay un nivel de multicolinealidad preocupante**.
+
+Por lo tanto, podemos incluir las tres variables predictoras en el modelo sin temor a que los errores estándar de los coeficientes se vean indebidamente inflados.
+
+------------------------------------------------------------------------
+
+### Análisis de outliers multivariados
+
+La distancia de Mahalanobis se utiliza para identificar outliers en un espacio multivariado. Mide la distancia de cada punto al centroide de los datos, teniendo en cuenta la correlación entre las variables. Es una generalización de la idea de medir cuántas desviaciones estándar está un punto del centro.
+
+```{r}
+#| label: aed-mahalanobis
+#| warning: false
+#| message: false
+#| fig-cap: "Gráfico Q-Q de las distancias de Mahalanobis al cuadrado."
+
+# --- 1. Calcular Distancias ---
+predictors <- datos_1 %>% dplyr::select(meandepth, sweptarea, density)
+maha_dist <- mahalanobis(
+  x = predictors, 
+  center = colMeans(predictors), 
+  cov = cov(predictors)
+)
+
+# Añadir las distancias y un ID al dataframe
+datos_plot_maha <- datos_1 %>% 
+  mutate(maha_dist = maha_dist, id = row_number())
+
+# --- 2. Crear manualmente los datos para el Q-Q Plot ---
+# Necesitamos ordenar las distancias (eje Y) y parearlas con
+# los cuantiles teóricos de una Chi-cuadrado (eje X).
+n <- nrow(datos_plot_maha)
+df <- 3 # Grados de libertad = número de predictores
+
+qq_data_manual <- datos_plot_maha %>%
+  arrange(maha_dist) %>%
+  mutate(
+    y_qq = maha_dist, # El eje Y es la distancia ordenada
+    x_qq = qchisq(ppoints(n), df = df) # El eje X es el cuantil teórico
+  )
+
+# --- 3. Crear el gráfico base (ahora es un geom_point) ---
+p_maha <- ggplot(qq_data_manual, aes(x = x_qq, y = y_qq)) +
+  geom_point(color = "#4E79A7") + # Usamos geom_point en lugar de stat_qq
+  geom_abline(
+    intercept = 0, slope = 1, 
+    linetype = "dashed", color = "red", size = 1
+  ) +
+  labs(
+    title = "Q-Q Plot de Distancias de Mahalanobis vs. Distribución Chi-cuadrado",
+    x = "Cuantiles teóricos (Chi-cuadrado, df=3)",
+    y = "Cuantiles muestrales (Distancias^2)"
+  ) +
+  theme_minimal(base_size = 12)
+
+# --- 4. Añadir las etiquetas ---
+# Filtramos los puntos de interés desde los datos Q-Q manuales
+outliers_maha <- qq_data_manual %>% 
+  filter(id %in% c(23, 47, 71, 103))
+
+# Ahora geom_text_repel usa las coordenadas x_qq, y_qq y el label
+p_maha + ggrepel::geom_text_repel(
+  data = outliers_maha,
+  aes(x = x_qq, y = y_qq, label = paste("Obs:", id)),
+  box.padding = 0.5,
+  nudge_y = 1,
+  nudge_x = -0.5
+)
+```
+
+El gráfico Q-Q compara los cuantiles de las distancias de Mahalanobis al cuadrado con los cuantiles de una distribución Chi-cuadrado con 3 grados de libertad (el número de variables predictoras). Si los puntos siguen la línea roja discontinua, se ajustan a la distribución teórica.
+
+Se observa que la mayoría de los puntos se alinean bien con la línea de referencia. Sin embargo, algunas observaciones en la cola superior se desvían significativamente (como la Obs. 103), indicando que son outliers multivariados. Estas son observaciones con combinaciones atípicas de `meandepth`, `sweptarea` y `density`. Al igual que con los outliers univariados, su presencia refuerza la necesidad de un modelo robusto que no sea excesivamente sensible a estos puntos extremos.
+
+------------------------------------------------------------------------
+
+## Cuestión N°1
+
+Para modelar la variable de respuesta `totabund` (conteo de peces), se propone un Modelo Lineal Generalizado (GLM) con distribución de Poisson, utilizando como covariables `meandepth`, `sweptarea` y `density`. A continuación, se detalla el marco teórico del modelo, se realiza el ajuste y se evalúa su calidad.
+
+### Marco teórico del modelo poisson
+
+El Modelo Lineal Generalizado (GLM) es una extensión flexible de los modelos lineales que permite manejar variables de respuesta con distribuciones de error distintas a la normal. Un GLM se define por tres componentes:
+
+1.  **Componente aleatoria**: Especifica la distribución de la variable de respuesta $Y_i$. Para datos de conteo como el número de peces, se asume una distribución de Poisson. $$Y_i \sim \text{Poisson}(\mu_i)$$ donde $\mu_i$ es el número esperado de peces para la observación $i$. Una propiedad fundamental de la distribución de Poisson es la equidispersión, que implica que la media y la varianza son iguales: $\mathbb{E}(Y_i) = \text{Var}(Y_i) = \mu_i$.
+
+2.  **Componente sistemática (predictor lineal)**: Es una combinación lineal de las variables predictoras, que en este caso son `meandepth` ($x_1$), `sweptarea` ($x_2$) y `density` ($x_3$). El predictor lineal $\eta_i$ para la $i$-ésima observación se define como: $$\eta_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_3 x_{i3}$$
+
+3.  **Función de enlace**: Conecta la media de la respuesta $\mu_i$ con el predictor lineal $\eta_i$. Para el modelo de Poisson, la función de enlace canónica es el logaritmo natural, que garantiza que la media predicha $\mu_i$ sea siempre positiva. $$g(\mu_i) = \log(\mu_i) = \eta_i$$ Invirtiendo la función de enlace, obtenemos la relación para la media: $\mu_i = e^{\eta_i} = e^{\beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_3 x_{i3}}$.
+
+### Evaluación de la bondad de ajuste
+
+Para determinar si el modelo se ajusta adecuadamente a los datos, se utiliza la **devianza residual**. La devianza mide la discrepancia entre el modelo propuesto y un modelo saturado (un modelo teórico que se ajusta perfectamente a los datos). Para un modelo Poisson, la devianza se calcula como: $$D(\mathbf{y}, \hat{\boldsymbol{\mu}}) = 2 \sum_{i=1}^n \left[ y_i \log\left(\frac{y_i}{\hat{\mu}_i}\right) - (y_i - \hat{\mu}_i) \right]$$ Bajo la hipótesis nula de que el modelo es correcto, la devianza residual sigue una distribución $\chi^2$ con $n-p$ grados de libertad, donde $n$ es el número de observaciones y $p$ es el número de parámetros del modelo. Un valor de devianza grande en relación con sus grados de libertad (y un p-valor pequeño) indica un mal ajuste del modelo.
+
+Como complemento al p-valor, se calcula el **valor-s (sorpresa)**, que cuantifica la información en contra de la hipótesis de buen ajuste: $S = -\log_2(p)$. Un valor-s alto indica que el resultado es "sorpresivo" bajo la hipótesis nula.
+
+### Análisis de sobredispersión
+
+Un supuesto clave del modelo de Poisson es la equidispersión ($\text{Var}(Y) = \mathbb{E}(Y)$). Cuando la varianza observada es mayor que la media ($\text{Var}(Y) > \mathbb{E}(Y)$), se produce el fenómeno de **sobredispersión**. Esto puede llevar a errores estándar subestimados y, por lo tanto, a conclusiones incorrectas sobre la significancia de los predictores.
+
+La sobredispersión se puede evaluar mediante el **parámetro de dispersión**, $\phi$, estimado como el estadístico de Pearson chi-cuadrado dividido por los grados de libertad residuales: $$\hat{\phi} = \frac{1}{n-p} \sum_{i=1}^n \frac{(y_i - \hat{\mu}_i)^2}{\hat{\mu}_i}$$ Un valor de $\hat{\phi}$ sustancialmente mayor que 1 es un fuerte indicio de sobredispersión.
+
+### Ajuste del modelo y resultados
+
+A continuación, se ajusta el modelo Poisson y se realizan las pruebas de diagnóstico mencionadas.
+
+```{r}
+#| label: modelo-glm-1
+#| warning: false
+#| message: false
+
+#--- 1. AJUSTE DEL MODELO ---
+modelo_poiss <- glm(totabund ~ meandepth + sweptarea + density,
+  data = datos_1,
+  family = poisson
+)
+
+#--- 2. CÁLCULO DE VALOR-P y VALOR-S PARA BONDAD DE AJUSTE (GOF) ---
+gof_p_value <- pchisq(
+  q = modelo_poiss$deviance,
+  df = modelo_poiss$df.residual,
+  lower.tail = FALSE,
+  log.p = FALSE
+)
+gof_log_p_value <- pchisq(
+  q = modelo_poiss$deviance,
+  df = modelo_poiss$df.residual,
+  lower.tail = FALSE,
+  log.p = TRUE
+)
+test_poiss_s <- -(gof_log_p_value / log(2))
+
+#--- 3. TABLA DE BONDAD DE AJUSTE ---
+resumen_gof <- tibble::tibble(
+  Modelo = c("Poisson"),
+  `Devianza residual` = c(stats::deviance(modelo_poiss)),
+  `Grados de libertad` = c(stats::df.residual(modelo_poiss)),
+  `Valor-p (χ²)` = c(gof_p_value),
+  `Valor-s (χ²)` = c(test_poiss_s)
+)
+
+pretty_tibble(resumen_gof)
+
+#--- 4. ANÁLISIS DE COEFICIENTES (CON IC y VALOR-S) ---
+# Usamos broom::tidy con conf.int = TRUE para obtener los IC
+coef_table_poiss <- broom::tidy(modelo_poiss, conf.int = TRUE) %>%
+   mutate(
+   # Calcular el valor-s
+   s_value = -log2(p.value)
+     # Se han eliminado los cálculos de IRR
+  )
+
+# Mostramos la tabla de coeficientes
+pretty_tibble(coef_table_poiss)
+
+#--- 5. VISUALIZACIÓN DE AJUSTES ---
+datos_pred <- tidyr::expand_grid(
+  meandepth = seq(min(datos_1$meandepth), max(datos_1$meandepth), length.out = 100),
+  sweptarea = mean(datos_1$sweptarea),
+  density = mean(datos_1$density)
+) %>%
+  dplyr::mutate(pred = predict(modelo_poiss, newdata = ., type = "response"))
+
+p1 <- ggplot(datos_1, aes(x = meandepth, y = totabund)) +
+  geom_point(alpha = 0.5, color = "#0072B2") +
+  geom_line(data = datos_pred, aes(y = pred), color = "red", linewidth = 1) +
+  labs(x = "Profundidad media", y = "Abundancia total de peces") +
+  theme_minimal() +
+  ylim(0, 1250) # Asegurar rangos de Y consistentes
+
+datos_pred_area <- tidyr::expand_grid(
+  meandepth = mean(datos_1$meandepth),
+  sweptarea = seq(min(datos_1$sweptarea), max(datos_1$sweptarea), length.out = 100),
+  density = mean(datos_1$density)
+) %>%
+  dplyr::mutate(pred = predict(modelo_poiss, newdata = ., type = "response"))
+
+p2 <- ggplot(datos_1, aes(x = sweptarea, y = totabund)) +
+  geom_point(alpha = 0.5, color = "#0072B2") +
+  geom_line(data = datos_pred_area, aes(y = pred), color = "red", linewidth = 1) +
+  labs(x = "Área barrida", y = "Abundancia total de peces") +
+  theme_minimal() +
+  ylim(0, 1250)
+
+datos_pred_dens <- tidyr::expand_grid(
+  meandepth = mean(datos_1$meandepth),
+  sweptarea = mean(datos_1$sweptarea),
+  density = seq(min(datos_1$density), max(datos_1$density), length.out = 100)
+) %>%
+  dplyr::mutate(pred = predict(modelo_poiss, newdata = ., type = "response"))
+
+p3 <- ggplot(datos_1, aes(x = density, y = totabund)) +
+  geom_point(alpha = 0.5, color = "#0072B2") +
+  geom_line(data = datos_pred_dens, aes(y = pred), color = "red", linewidth = 1) +
+  labs(x = "Densidad de follaje", y = "Abundancia Total de Peces") +
+  theme_minimal() +
+  ylim(0, 1250)
+
+#--- COMBINACIÓN DE GRÁFICOS ---
+grafico_combinado <- (p1 + p2 + p3) +
+  plot_layout(ncol = 3) +
+  plot_annotation(
+  title = "Ajuste del modelo vs. variables predictoras",
+  theme = theme(
+  plot.title = element_text(
+     hjust = 0.5,
+     size = 20,
+     face = "bold",
+     margin = margin(b = 10)
+     )
+     )
+  )
+
+print(grafico_combinado)
+```
+
+### Interpretación de los resultados
+
+#### 1. Bondad de ajuste (sobredispersión)
+
+La tabla de **Adecuación por devianza** (la primera tabla en la imagen) es la primera y más importante prueba.
+
+-   **Devianza vs. grados de libertad**: El modelo tiene una devianza residual de **5867.433** con **143** grados de libertad. En un modelo Poisson que se ajusta bien, la devianza residual debería ser aproximadamente igual a sus grados de libertad (Devianza / GL $\approx 1$).
+-   **Parámetro de dispersión (**$\hat{\phi}$): El parámetro de dispersión estimado es $5867.433 / 143 \approx \mathbf{41.03}$. Este valor es drásticamente mayor que 1, lo que indica una **sobredispersión severa**. La varianza de los datos es aproximadamente 41 veces mayor que la media, violando fundamentalmente el supuesto de equidispersión del modelo Poisson.
+-   **Significancia (valor-p y valor-s)**: El `Valor-p (χ²)` es **0** (esencialmente cero). El `Valor-s (χ²)` es **3755.894**, lo que representa una cantidad abrumadora de evidencia en contra de la hipótesis nula de que el modelo se ajusta bien.
+
+**Conclusión de GOF**: El modelo Poisson es **totalmente inadecuado** para estos datos.
+
+#### 2. Análisis de Coeficientes
+
+La tabla de **Resultados del modelo poisson** (la segunda tabla en la imagen) muestra los coeficientes estimados (β), sus estadísticos z, valores-p, valores-s e Intervalos de Confianza (IC).
+
+-   **Significancia (Valores-p y -s)**: Todas las variables (`meandepth`, `sweptarea`, `density`) y el intercepto muestran un `p.value` de **0**. Los Valores-s correspondientes (columna `s_v...`) son, por lo tanto, extremadamente altos (p.ej., **419.1...** para `sweptarea`, y valores aún mayores para `meandepth` y `density`, consistentes con sus estadísticos `z` de -49 y 109), lo que indica una significancia estadística muy alta.
+-   **Advertencia**: **Estos resultados no son fiables**. La sobredispersión severa ( $\hat{\phi} \approx 41$) provoca que los errores estándar de los coeficientes (`std.error`) estén *subestimados* (parezcan más pequeños de lo que son). Esto infla los estadísticos `z` (`statistic`) y hace que los `p.value` sean artificialmente bajos. Los intervalos de confianza (`conf.low`, `conf.high`) son, por tanto, *demasiado estrechos*.
+
+#### 3. Diagnóstico Visual
+
+Los gráficos de **"Ajuste del modelo vs. variables predictoras"** (la imagen del gráfico) confirman visualmente el mal ajuste:
+
+-   La línea roja (predicción del modelo) pasa muy por debajo de la nube principal de datos en los gráficos de `sweptarea` y `density`.
+-   El modelo es incapaz de capturar los conteos más altos (p.ej., \> 500) y subestima sistemáticamente la abundancia observada. La forma de la curva exponencial para `density` es extrema y probablemente no sea realista, impulsada por la mala especificación del modelo.
+
+------------------------------------------------------------------------
+
+## Cuestión N°2
+
+Ajuste el modelo anterior estimando el parámetro de dispersión $\phi$. Utilizando el criterio de devianza, indique si el modelo es adecuado. Comente los resultados.
+
+### Marco teórico del modelo quasi-Poisson
+
+Como se estableció en el EDA y en el diagnóstico del modelo de Poisson, los datos presentan una fuerte **sobredispersión** (la varianza es mucho mayor que la media). El modelo Quasi-Poisson es una solución pragmática a este problema. No especifica una distribución de probabilidad completa para los datos, sino que asume una relación media-varianza más flexible:
+
+$$\mathbb{E}(Y_i) = \mu_i$$ $$\text{Var}(Y_i) = \phi \cdot \mu_i$$
+
+Donde:
+
+-   $\mu_i$ es la media, modelada de la misma forma que en el modelo de Poisson: $\log(\mu_i) = \eta_i$.
+-   $\phi$ es el **parámetro de dispersión**. Si $\phi > 1$, tenemos sobredispersión. Si $\phi = 1$, el modelo es equivalente al de Poisson.
+
+El ajuste del modelo se basa en la **cuasi-verosimilitud (quasi-likelihood)**, que no es una verosimilitud genuina. Como resultado:
+
+1.  Las estimaciones de los coeficientes ($\beta_j$) son idénticas a las del modelo de Poisson.
+2.  Los errores estándar de los coeficientes se corrigen, multiplicándose por $\sqrt{\hat{\phi}}$.
+3.  Las pruebas de significancia (estadísticos t o z y p-valores) se ajustan para reflejar la mayor incertidumbre.
+4.  El criterio de devianza para la bondad de ajuste cambia. La devianza residual no sigue una distribución $\chi^2$, sino que se espera que $\hat{\phi} \approx \text{Devianza} / \text{gl}$.
+
+### Ajuste del modelo y resultados
+
+Se ajusta el modelo Quasi-Poisson y se analiza el resumen, prestando especial atención al parámetro de dispersión estimado.
+
+```{r}
+#| label: modelo-glm-2
+#| warning: false
+#| message: false
+
+#--- 1. AJUSTE DEL MODELO QUASI-POISSON ---
+modelo_qpoiss <- glm(totabund ~ meandepth + sweptarea + density,
+   data = datos_1,
+   family = quasipoisson
+)
+
+#--- 2. ANÁLISIS DE DEVIANZA Y DISPERSIÓN ---
+
+resumen_gof_q <- tibble::tibble(
+   Modelo = "Quasi-Poisson",
+   `Devianza residual` = deviance(modelo_qpoiss),
+   `gl resid` = df.residual(modelo_qpoiss),
+   `Dispersión (φ) Estimada` = summary(modelo_qpoiss)$dispersion,
+   `Ratio Devianza/gl` = deviance(modelo_qpoiss) / df.residual(modelo_qpoiss)
+)
+
+# Mostrar la tabla (puedes usar gt, kable, o pretty_tibble)
+pretty_tibble(resumen_gof_q, show_types = FALSE)
+
+#--- 3. ANÁLISIS DE COEFICIENTES ---
+coef_table <- broom::tidy(modelo_qpoiss, conf.int = TRUE) %>%
+    mutate(
+        # Calcular el valor-s
+        s_value = -log2(p.value)
+        # Se han eliminado los cálculos de IRR
+    )
+
+pretty_tibble(coef_table)
+
+#--- 4. VISUALIZACIÓN DE AJUSTES ---
+datos_pred <- tidyr::expand_grid(
+   meandepth = seq(min(datos_1$meandepth), max(datos_1$meandepth), length.out = 100),
+   sweptarea = mean(datos_1$sweptarea),
+   density = mean(datos_1$density)
+) %>%
+   dplyr::mutate(pred = predict(modelo_qpoiss, newdata = ., type = "response"))
+
+p1 <- ggplot(datos_1, aes(x = meandepth, y = totabund)) +
+   geom_point(alpha = 0.5, color = "#0072B2") +
+   geom_line(data = datos_pred, aes(y = pred), color = "red", linewidth = 1) +
+   labs(x = "Profundidad media", y = "Abundancia total de peces") +
+   theme_minimal() +
+   ylim(0, 1250) # Asegurar rangos de Y consistentes
+
+datos_pred_area <- tidyr::expand_grid(
+   meandepth = mean(datos_1$meandepth),
+   sweptarea = seq(min(datos_1$sweptarea), max(datos_1$sweptarea), length.out = 100),
+   density = mean(datos_1$density)
+) %>%
+   dplyr::mutate(pred = predict(modelo_qpoiss, newdata = ., type = "response"))
+
+p2 <- ggplot(datos_1, aes(x = sweptarea, y = totabund)) +
+   geom_point(alpha = 0.5, color = "#0072B2") +
+   geom_line(data = datos_pred_area, aes(y = pred), color = "red", linewidth = 1) +
+   labs(x = "Área barrida", y = "Abundancia total de peces") +
+   theme_minimal() +
+   ylim(0, 1250)
+
+datos_pred_dens <- tidyr::expand_grid(
+   meandepth = mean(datos_1$meandepth),
+   sweptarea = mean(datos_1$sweptarea),
+   density = seq(min(datos_1$density), max(datos_1$density), length.out = 100)
+) %>%
+   dplyr::mutate(pred = predict(modelo_qpoiss, newdata = ., type = "response"))
+
+p3 <- ggplot(datos_1, aes(x = density, y = totabund)) +
+   geom_point(alpha = 0.5, color = "#0072B2") +
+   geom_line(data = datos_pred_dens, aes(y = pred), color = "red", linewidth = 1) +
+   labs(x = "Densidad de follaje", y = "Abundancia Total de Peces") +
+   theme_minimal() +
+   ylim(0, 1250)
+
+#--- COMBINACIÓN DE GRÁFICOS ---
+grafico_combinado <- (p1 + p2 + p3) +
+   plot_layout(ncol = 3) +
+   plot_annotation(
+     title = "Ajuste del modelo vs. variables predictoras",
+     theme = theme(
+       plot.title = element_text(
+         hjust = 0.5,
+         size = 20,
+         face = "bold",
+         margin = margin(b = 10)
+       )
+     )
+   )
+
+print(grafico_combinado)
+```
+
+### Interpretación y comentarios
+
+1.  **Análisis de Devianza y Dispersión**:
+
+    -   La tabla de resumen (primera imagen) muestra una devianza residual de **5867.433** con **143** grados de libertad residuales.
+    -   El parámetro de dispersión estimado (calculado con Pearson $\chi^2$) es $\hat{\phi} \approx 37.2852$.
+    -   El ratio `Devianza / gl` (otro estimador de $\phi$) es **41.031**.
+    -   Ambos valores son gigantescos y muy superiores a 1, confirmando la **sobredispersión masiva** que ya se había detectado. El modelo Quasi-Poisson *utiliza* el $\hat{\phi}$ de 37.2852 para corregir los errores estándar.
+    -   En este contexto, la "bondad de ajuste" no se evalúa con un p-valor (la prueba $\chi^2$ es inválida), sino que simplemente *aceptamos* que los datos son sobredispersos y que el modelo está corrigiendo este hecho.
+
+2.  **Análisis de Coeficientes**:
+
+    -   **Estimaciones**: Las estimaciones de los coeficientes (β) son idénticas a las del modelo Poisson (p.ej., `Intercept` = 5.3088866, `meandepth` = -0.0004493).
+    -   **Errores Estándar y Significación**: Los errores estándar se han inflado masivamente (comparados con el modelo Poisson), multiplicándose por $\sqrt{\hat{\phi}} \approx \sqrt{37.2852} \approx \mathbf{6.11}$. Sin embargo, a pesar de este enorme ajuste, **todas las variables predictoras siguen siendo estadísticamente significativas**.
+        -   `meandepth`: `p.value` = 0.0000000. El valor-s (columna `s...` en la tabla) es extremadamente alto (visible como `41...`).
+        -   `sweptarea`: `p.value` = 0.0001345. Este valor es muy pequeño, y el valor-s correspondiente (visible como `12...`) es $\approx 12.86$, lo que representa una fuerte evidencia de un efecto.
+        -   `density`: `p.value` = 0.0000000. Al igual que `meandepth`, el valor-s es abrumadoramente grande (visible como `124...`).
+    -   Esto indica que, incluso después de tener en cuenta la extrema variabilidad de los datos, la evidencia de un efecto de los tres predictores sigue siendo muy fuerte.
+
+3.  **Diagnóstico Visual**:
+
+    -   Los gráficos de **"Ajuste del modelo vs. variables predictoras"** (la imagen del gráfico) son idénticos a los del modelo Poisson.
+    -   Esto es esperado, ya que el modelo Quasi-Poisson *no cambia* las estimaciones de los coeficientes ($\beta$) ni, por lo tanto, la media predicha ($\mu_i$).
+    -   Como resultado, el diagnóstico visual es el mismo: el modelo sigue subestimando sistemáticamente los conteos altos y no se ajusta bien a la nube de puntos, lo que sugiere que la *forma* de la relación podría seguir siendo inadecuada.
+
+**Comentario Final**: El modelo Quasi-Poisson proporciona conclusiones mucho más fiables que el modelo Poisson. Confirma que la sobredispersión era severa ($\hat{\phi} \approx 37$), pero que los predictores son tan fuertes que su significancia estadística se mantiene incluso después de la corrección. Sin embargo, el mal ajuste visual sugiere que este modelo aún no captura adecuadamente la estructura de los datos.
+
+
+------------------------------------------------------------------------
+
+## Cuestión N°3
+
+Ajuste un modelo lineal generalizado Binomial Negativo para la variable `totabund` considerando las covariables: `meandepth`, `sweptarea` y `density`. Utilizando el criterio de devianza, indique si el modelo es adecuado. Comente los resultados.
+
+### Marco teórico del modelo binomial negativo
+
+El modelo Binomial Negativo (BN) es una alternativa probabilística al modelo de Poisson, diseñada específicamente para datos de conteo que exhiben **sobredispersión**. A diferencia del modelo Quasi-Poisson, que simplemente ajusta los errores estándar, el BN propone un mecanismo de generación de datos diferente.
+
+El modelo BN se puede pensar como un modelo Poisson donde la media $\mu$ no es fija, sino que sigue una distribución Gamma. Esta mezcla (Poisson-Gamma) resulta en la distribución Binomial Negativa.
+
+Los componentes clave del GLM Binomial Negativo son:
+
+1.  **Componente aleatoria**: Se asume que la variable de respuesta $Y_i$ sigue una distribución Binomial Negativa, caracterizada por una media $\mu_i$ y un parámetro de dispersión $\theta$. $$Y_i \sim \text{NB}(\mu_i, \theta)$$
+
+2.  **Relación Media-Varianza**: Esta es la característica principal del modelo. La media es $\mathbb{E}(Y_i) = \mu_i$, pero la varianza es más flexible: $$\text{Var}(Y_i) = \mu_i + \frac{\mu_i^2}{\theta}$$
+
+    -   El término $\frac{\mu_i^2}{\theta}$ modela la sobredispersión.
+    -   $\theta$ es el **parámetro de dispersión** (o `size`). A medida que $\theta \to \infty$, el término $\frac{\mu_i^2}{\theta} \to 0$, y la varianza converge a la media ($\text{Var}(Y_i) \to \mu_i$), haciendo que el modelo BN converja al modelo de Poisson.
+    -   Un valor de $\theta$ pequeño y finito indica una sobredispersión significativa.
+
+3.  **Componente sistemática y Función de enlace**: Son idénticas al modelo de Poisson. El predictor lineal $\eta_i$ se conecta a la media $\mu_i$ a través de la función de enlace logarítmica: $$\log(\mu_i) = \eta_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \beta_3 x_{i3}$$
+
+### Evaluación de la bondad de ajuste
+
+Al ser un modelo basado en una verosimilitud completa (a diferencia del Quasi-Poisson), podemos volver a utilizar la **prueba de bondad de ajuste de la devianza**. Si el modelo Binomial Negativo es el modelo correcto, la devianza residual $D(\mathbf{y}, \hat{\boldsymbol{\mu}})$ debe seguir una distribución $\chi^2$ con $n-p$ grados de libertad (donde $p$ ahora incluye el parámetro $\theta$ estimado).
+
+Si el valor-p de esta prueba no es significativo (p.ej., $p > 0.05$), no tenemos evidencia para rechazar la hipótesis nula, lo que sugiere que el modelo se ajusta adecuadamente a los datos.
+
+### Ajuste del modelo y resultados
+
+Se ajusta el modelo Binomial Negativo utilizando la función `glm.nb()` del paquete `MASS`, que estima simultáneamente los coeficientes $\beta$ y el parámetro de dispersión $\theta$ mediante máxima verosimilitud.
+
+```{r}
+#| label: modelo-glm-3
+#| warning: false
+#| message: false
+
+#--- 1. AJUSTE DEL MODELO BINOMIAL NEGATIVO ---
+# Usamos glm.nb del paquete MASS (cargado en el setup)
+modelo_nb <- MASS::glm.nb(
+   totabund ~ meandepth + sweptarea + density,
+   data = datos_1
+)
+
+#--- 2. CÁLCULO DE VALOR-P y VALOR-S PARA BONDAD DE AJUSTE (GOF) ---
+gof_p_value_nb <- pchisq(
+   q = modelo_nb$deviance,
+   df = modelo_nb$df.residual,
+   lower.tail = FALSE,
+   log.p = FALSE
+)
+gof_log_p_value_nb <- pchisq(
+   q = modelo_nb$deviance,
+   df = modelo_nb$df.residual,
+   lower.tail = FALSE,
+   log.p = TRUE
+)
+test_nb_s <- -(gof_log_p_value_nb / log(2))
+
+#--- 3. TABLA DE BONDAD DE AJUSTE ---
+resumen_gof_nb <- tibble::tibble(
+   Modelo = "Binomial Negativo",
+   `Devianza residual` = deviance(modelo_nb),
+   `Grados de libertad` = df.residual(modelo_nb),
+   `Valor-p (χ²)` = gof_p_value_nb,
+   `Valor-s (χ²)` = test_nb_s,
+   `Ratio Dev/GL` = deviance(modelo_nb) / df.residual(modelo_nb)
+)
+
+pretty_tibble(resumen_gof_nb)
+
+#--- 4. PARÁMETRO DE DISPERSIÓN THETA ---
+theta_summary <- tibble(
+   Parámetro = "Theta (θ) estimado",
+   Estimación = modelo_nb$theta
+)
+
+pretty_tibble(theta_summary, show_types = FALSE)
+
+#--- 5. ANÁLISIS DE COEFICIENTES (CON IC y VALOR-S) ---
+coef_table_nb <- broom::tidy(modelo_nb, conf.int = TRUE) %>%
+   mutate(
+   # Calcular el valor-s
+   s_value = -log2(p.value)
+        # Se han eliminado los cálculos de IRR
+   )
+
+pretty_tibble(coef_table_nb)
+
+#--- 6. VISUALIZACIÓN DE AJUSTES ---
+datos_pred_depth_nb <- tidyr::expand_grid(
+   meandepth = seq(min(datos_1$meandepth), max(datos_1$meandepth), length.out = 100),
+   sweptarea = mean(datos_1$sweptarea),
+   density = mean(datos_1$density)
+) %>%
+   dplyr::mutate(pred = predict(modelo_nb, newdata = ., type = "response"))
+
+p1_nb <- ggplot(datos_1, aes(x = meandepth, y = totabund)) +
+   geom_point(alpha = 0.5, color = "#0072B2") +
+   geom_line(data = datos_pred_depth_nb, aes(y = pred), color = "red", linewidth = 1) +
+   labs(x = "Profundidad media", y = "Abundancia total de peces") +
+   theme_minimal() +
+   ylim(0, 1250) # Asegurar rangos de Y consistentes
+
+datos_pred_area_nb <- tidyr::expand_grid(
+   meandepth = mean(datos_1$meandepth),
+   sweptarea = seq(min(datos_1$sweptarea), max(datos_1$sweptarea), length.out = 100),
+   density = mean(datos_1$density)
+) %>%
+   dplyr::mutate(pred = predict(modelo_nb, newdata = ., type = "response"))
+
+p2_nb <- ggplot(datos_1, aes(x = sweptarea, y = totabund)) +
+   geom_point(alpha = 0.5, color = "#0072B2") +
+   geom_line(data = datos_pred_area_nb, aes(y = pred), color = "red", linewidth = 1) +
+   labs(x = "Área barrida", y = "Abundancia total de peces") +
+   theme_minimal() +
+   ylim(0, 1250)
+
+datos_pred_dens_nb <- tidyr::expand_grid(
+   meandepth = mean(datos_1$meandepth),
+   sweptarea = mean(datos_1$sweptarea),
+   density = seq(min(datos_1$density), max(datos_1$density), length.out = 100)
+) %>%
+   dplyr::mutate(pred = predict(modelo_nb, newdata = ., type = "response"))
+
+p3_nb <- ggplot(datos_1, aes(x = density, y = totabund)) +
+   geom_point(alpha = 0.5, color = "#0072B2") +
+   geom_line(data = datos_pred_dens_nb, aes(y = pred), color = "red", linewidth = 1) +
+   labs(x = "Densidad de follaje", y = "Abundancia Total de Peces") +
+   theme_minimal() +
+   ylim(0, 1250)
+
+#--- COMBINACIÓN DE GRÁFICOS ---
+grafico_combinado_nb <- (p1_nb + p2_nb + p3_nb) +
+   plot_layout(ncol = 3) +
+   plot_annotation(
+     title = "Ajuste del modelo Binomial Negativo vs. variables predictoras",
+     theme = theme(
+       plot.title = element_text(
+         hjust = 0.5,
+         size = 20,
+         face = "bold",
+         margin = margin(b = 10)
+       )
+     )
+   )
+
+print(grafico_combinado_nb)
+```
+
+### Interpretación y comentarios
+
+1.  **Bondad de Ajuste**:
+
+    -   **Devianza vs. Grados de Libertad**: La tabla de bondad de ajuste (primera imagen) muestra una devianza residual de **158.7024** con **143** grados de libertad. El ratio `Dev/GL` es **1.109807**, un valor *extremadamente* cercano a 1.
+    -   **Comparación**: Esto contrasta radicalmente con el modelo Poisson, que tenía una devianza de 5867. El modelo Binomial Negativo ha logrado explicar la enorme variabilidad (sobredispersión) que el Poisson no pudo.
+    -   **Significancia (valor-p y valor-s)**: El `Valor-p (χ²)` es **0.1747**. Dado que $0.1747 > 0.05$, **no rechazamos la hipótesis nula**. Esto significa que *no hay evidencia estadística para decir que el modelo se ajusta mal*. El `Valor-s (χ²)` es **2.517**, lo cual es un valor bajo que indica muy poca "sorpresa" o evidencia en contra de la hipótesis de buen ajuste.
+    -   **Conclusión de GOF**: El modelo Binomial Negativo es **estadísticamente adecuado** para estos datos.
+
+2.  **Parámetro de Dispersión (**$\theta$):
+
+    -   La segunda tabla en la imagen muestra que el parámetro $\theta$ estimado es **3.031338**.
+    -   Este valor es pequeño y está lejos de infinito, lo que confirma formalmente la conclusión del EDA y del modelo Poisson: los datos sufren de una **sobredispersión significativa**. El modelo BN ha capturado exitosamente esta sobredispersión.
+
+3.  **Análisis de Coeficientes**:
+
+    -   Las estimaciones de los coeficientes (tercera y cuarta imagen) son diferentes a las de los modelos Poisson y Quasi-Poisson, ya que se estimaron usando un método de máxima verosimilitud diferente.
+    -   A pesar del cambio en el modelo, **todas las variables predictoras siguen siendo altamente significativas**.
+    -   `meandepth` y `density` tienen un `p.value` de 0.000000, con valores-s (`s_value`) extremadamente altos (**53.37** y **82.61**, respectivamente).
+    -   `sweptarea` tiene un `p.value` de **0.000879**, que sigue siendo muy significativo, y un valor-s de **10.15**, lo que indica una fuerte evidencia de su efecto.
+
+4.  **Diagnóstico Visual**:
+
+    -   Los gráficos de ajuste (imagen del gráfico) muestran una mejora notable. A diferencia de las líneas del modelo Poisson/Quasi-Poisson (que eran idénticas y pasaban muy por debajo de los datos), la línea roja del modelo Binomial Negativo ahora **se ajusta mucho mejor a la tendencia central de los datos**.
+    -   Se puede observar cómo la curva de predicción para `density` y `sweptarea` pasa por el "centro de gravedad" de la nube de puntos, capturando la relación mucho más fielmente.
+
+**Comentario Final**: El modelo Binomial Negativo es **claramente superior** a los modelos Poisson y Quasi-Poisson. El modelo Poisson falló catastróficamente debido a la sobredispersión ($\hat{\phi} \approx 41$). El modelo Quasi-Poisson *corrigió* los p-valores para esa sobredispersión, pero no mejoró el ajuste del modelo en sí. El modelo Binomial Negativo, en cambio, *modela* exitosamente la sobredispersión (estimando $\theta \approx 3.03$), lo que resulta en un modelo que es **estadísticamente adecuado** (Dev/GL $\approx 1.11$, p-valor = 0.175) y proporciona estimaciones fiables.
+
+
+-----
+
+# Análisis del conjunto de datos "Weekly"
+
+En esta sección, se realiza un análisis exploratorio del conjunto de datos `Weekly` (cargado en la variable `datos_2`), que forma parte del paquete `ISLR`. Este conjunto de datos contiene 1.089 retornos semanales del índice bursátil S\&P 500 entre 1990 y 2010.
+
+El objetivo es comprender las características de las variables, que incluyen el año (`Year`), los retornos de las 5 semanas anteriores (`Lag1` a `Lag5`), el volumen de transacciones (`Volume`), el retorno de la semana actual (`Today`) y la dirección del mercado en la semana actual (`Direction` - 'Up' o 'Down').
+
+## Carga y Preparación de los Datos
+
+Primero, echamos un vistazo a la estructura de los datos para confirmar que se han cargado correctamente.
+
+```{r}
+#| label: tabla-datos-weekly
+#| warning: false
+#| message: false
+
+pretty_tibble(datos_2, n = 5)
+```
+
+Los datos están en el formato esperado. `Direction` es una variable categórica (factor), y el resto son numéricas. El siguiente paso es verificar si hay valores ausentes (`NA`) que necesiten ser tratados.
+
+```{r}
+#| warning: false
+#| message: false
+
+print(colSums(is.na(datos_2)))
+```
+
+El conjunto de datos está completo y no contiene valores `NA`. No se requiere limpieza adicional.
+
+-----
+
+## Análisis exploratorio de datos (EDA)
+
+Investigaremos la distribución de cada variable y las relaciones entre ellas. En el contexto de los mercados financieros, estamos especialmente interesados en ver si las variables pasadas (como `Lag1` o `Volume`) tienen alguna relación visible con la variable de respuesta (`Direction`).
+
+### Análisis univariado
+
+Analizaremos cada variable individualmente.
+
+-----
+
+#### Variable de Respuesta: `Direction` (Dirección del mercado)
+
+Esta es la variable objetivo que usualmente se busca predecir. Es una variable binaria que indica si el mercado subió ('Up') or bajó ('Down') durante la semana.
+
+```{r}
+#| label: aed-direction
+#| warning: false
+#| message: false
+
+# --- 1. Tabla de Frecuencias ---
+stats_summary <- datos_2 %>%
+ count(Direction, sort = TRUE) %>%
+ mutate(Porcentaje = (n / sum(n)) * 100)
+
+pretty_tibble(stats_summary, n = 2, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-direction
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución de la dirección del mercado."
+#| echo: false
+
+
+ggplot(datos_2, aes(x = fct_infreq(Direction), fill = Direction)) +
+geom_bar(alpha = 0.8) +
+geom_text(stat='count', aes(label = after_stat(count)), vjust = -0.5) +
+ # Asignamos colores consistentes
+scale_fill_manual(values = c("Down" = "#E15759", "Up" = "#76B7B2")) +
+labs(title = "Distribución de 'Direction'", x = "Dirección", y = "Frecuencia (Conteo)") +
+theme_minimal(base_size = 12) +
+theme(
+plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+legend.position = "none" # Ocultamos la leyenda
+)
+```
+
+**Interpretación de `Direction`:**
+
+\-**Balance de Clases:** El conjunto de datos está razonablemente balanceado. Hay **605** observaciones de 'Up' (55.56%) y **484** de 'Down' (44.44%).
+\-**Tendencia Ligera:** Existe una ligera tendencia histórica a que más semanas terminen con retornos positivos que negativos en este período de 20 años.
+\-**Implicación para el Modelo:** Este balance es bueno para el modelado. No hay un desbalance severo que pudiera sesgar un modelo de clasificación (como la regresión logística).
+
+-----
+
+#### Variable `Today` (Retorno actual)
+
+Esta variable representa el retorno porcentual de la semana actual. `Direction` se deriva directamente de esta variable (si `Today` \> 0, `Direction` es 'Up').
+
+```{r}
+#| label: aed-today
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas del retorno semanal actual."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_2 %>%
+summarise(
+Min = min(Today),
+`1st Qu.` = quantile(Today, 0.25),
+Median = median(Today),
+Mean = mean(Today),
+`3rd Qu.` = quantile(Today, 0.75),
+Max = max(Today),
+SD = sd(Today),
+Skewness = moments::skewness(Today),
+Kurtosis = moments::kurtosis(Today)
+)
+
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-today
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución del retorno semanal actual."
+#| echo: false
+
+# --- 2. Gráfico de Distribución ---
+mean_val <- mean(datos_2$Today)
+median_val <- median(datos_2$Today)
+
+p_hist <- ggplot(datos_2, aes(x = Today)) +
+geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "#4E79A7", color = "white", alpha = 0.8) +
+geom_density(fill = "#F28E2B", color = "#F28E2B", alpha = 0.4, linewidth = 1) +
+geom_vline(aes(xintercept = mean_val, color = "Media"), linetype = "dashed", size = 1) +
+geom_vline(aes(xintercept = median_val, color = "Mediana"), linetype = "dotted", size = 1) +
+scale_color_manual(name = "Estadísticos", values = c("Media" = "red", "Mediana" = "blue")) +
+labs(title = "Distribución del Retorno Semanal (Today)", x = "Today (%)", y = "Densidad") +
+theme_minimal(base_size = 12) +
+theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), legend.position = "bottom")
+
+p_box <- ggplot(datos_2, aes(x = Today)) +
+geom_boxplot(fill = "#4E79A7", alpha = 0.7, width = 0.3, outlier.colour = "#E15759", outlier.shape = 18, outlier.size = 2.5) +
+theme_void()
+
+p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
+```
+
+**Interpretación de `Today`:**
+
+\-**Distribución (Casi) Simétrica:** La distribución está centrada cerca de cero. La **media (0.1499)** y la **mediana (0.241)** son muy cercanas. El coeficiente de asimetría (**-0.4805**) es negativo, indicando un ligero sesgo a la izquierda (la media está a la izquierda de la mediana), lo cual es visible en el gráfico.
+\-**Colas Pesadas (Leptocúrtica):** El coeficiente de curtosis (**8.685**) es significativamente mayor que 3 (el de una normal). Esto confirma lo que se ve en el gráfico: la distribución tiene un pico más agudo y "colas más pesadas" (más valores extremos, tanto positivos como negativos) de lo que se esperaría en una distribución normal. Este es un rasgo característico de los retornos financieros.
+
+-----
+
+#### Variable `Lag1` (Retorno semana anterior)
+
+Esta es una de las variables predictoras clave. Representa el retorno porcentual de la semana *anterior*.
+
+```{r}
+#| label: aed-lag1
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas del retorno de la semana anterior."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_2 %>%
+summarise(
+Min = min(Lag1),
+`1st Qu.` = quantile(Lag1, 0.25),
+Median = median(Lag1),
+Mean = mean(Lag1),
+`3rd Qu.` = quantile(Lag1, 0.75),
+Max = max(Lag1),
+SD = sd(Lag1),
+Skewness = moments::skewness(Lag1),
+Kurtosis = moments::kurtosis(Lag1)
+)
+
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+**Interpretación de `Lag1`:**
+
+\-**Distribución Idéntica:** Como era de esperar, las estadísticas de `Lag1` (Media=0.1506, Mediana=0.241, Skewness=-0.4813, Kurtosis=8.6848) son casi idénticas a las de `Today`. Esto tiene sentido lógico, ya que el retorno de "la semana pasada" es simplemente el retorno de "esta semana" desplazado en el tiempo. Las variables `Lag2` a `Lag5` muestran propiedades estadísticas idénticas.
+
+-----
+
+#### Variable `Volume` (Volumen de transacciones)
+
+Esta variable representa el número de acciones transadas (en miles de millones).
+
+```{r}
+#| label: aed-volume
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución y estadísticas del volumen de transacciones."
+
+# --- 1. Estadísticas Descriptivas ---
+stats_summary <- datos_2 %>%
+summarise(
+Min = min(Volume),
+`1st Qu.` = quantile(Volume, 0.25),
+Median = median(Volume),
+Mean = mean(Volume),
+`3rd Qu.` = quantile(Volume, 0.75),
+Max = max(Volume),
+SD = sd(Volume),
+Skewness = moments::skewness(Volume),
+Kurtosis = moments::kurtosis(Volume)
+)
+
+pretty_tibble(stats_summary, n = 1, show_types = FALSE)
+```
+
+```{r}
+#| label: plot-volume
+#| warning: false
+#| message: false
+#| fig-cap: "Distribución del volumen de transacciones."
+#| echo: false
+
+# --- 2. Gráfico de Distribución ---
+mean_val <- mean(datos_2$Volume)
+median_val <- median(datos_2$Volume)
+
+p_hist <- ggplot(datos_2, aes(x = Volume)) +
+geom_histogram(aes(y = after_stat(density)), bins = 30, fill = "#4E79A7", color = "white", alpha = 0.8) +
+geom_density(fill = "#F28E2B", color = "#F28E2B", alpha = 0.4, linewidth = 1) +
+geom_vline(aes(xintercept = mean_val, color = "Media"), linetype = "dashed", size = 1) +
+geom_vline(aes(xintercept = median_val, color = "Mediana"), linetype = "dotted", size = 1) +
+scale_color_manual(name = "Estadísticos", values = c("Media" = "red", "Mediana" = "blue")) +
+labs(title = "Distribución del Volumen de Transacciones", x = "Volume (en miles de millones)", y = "Densidad") +
+theme_minimal(base_size = 12) +
+theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"), legend.position = "bottom")
+
+p_box <- ggplot(datos_2, aes(x = Volume)) +
+geom_boxplot(fill = "#4E79A7", alpha = 0.7, width = 0.3, outlier.colour = "#E15759", outlier.shape = 18, outlier.size = 2.5) +
+theme_void()
+
+p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
+```
+
+**Interpretación de `Volume`:**
+
+\-**Fuerte Asimetría Positiva:** A diferencia de los retornos, el volumen tiene un fuerte sesgo a la derecha (**Skewness = 1.618**). La **media (1.575)** es significativamente mayor que la **mediana (1.003)**.
+\-**Distribución Bimodal/Multimodal:** El gráfico de densidad muestra al menos dos (posiblemente tres) picos claros. Esto sugiere que hubo diferentes "regímenes" de volumen de transacciones durante el período de 20 años.
+\-**Implicación (No Estacionariedad):** Es muy probable que el volumen de transacciones no sea estacionario, es decir, que haya aumentado con el tiempo. Esto lo confirmaremos en el análisis bivariado al compararlo con `Year`.
+
+
+-----
+
+### Análisis de valores atípicos (Outliers)
+
+Usamos el mismo método IQR para identificar outliers univariados en los predictores.
+
+```{r}
+#| label: aed-outliers-weekly
+#| warning: false
+#| message: false
+
+# Función para detectar outliers usando el método IQR
+# (Esta función ya fue definida en el EDA de Fishing)
+# detect_outliers <- function(x) { ... }
+
+# Lista de variables a analizar
+variables_a_analizar_w <- c("Lag1", "Lag2", "Lag3", "Lag4", "Lag5", "Volume", "Year")
+
+# Aplicar a las variables de interés
+outlier_list_w <- lapply(datos_2[variables_a_analizar_w], detect_outliers)
+
+# Crear tabla de resumen de outliers
+outlier_summary_w <- tibble(
+  Variable = names(outlier_list_w),
+  `Número de Outliers` = sapply(outlier_list_w, length),
+  `% de Outliers` = (sapply(outlier_list_w, length) / nrow(datos_2)) * 100
+)
+
+# Mostrar tabla con pretty_tibble
+pretty_tibble(outlier_summary_w)
+```
+
+**Interpretación del Análisis de Outliers:**
+
+- **Variables `Lag` (entre 3.31% y 3.40% de outliers):** Todas las variables de retornos pasados (`Lag1` a `Lag5`) muestran un número significativo de outliers. Esto es **completamente esperado** en datos financieros y confirma el análisis de curtosis (colas pesadas). Estos outliers no son errores, sino que representan semanas de alta volatilidad o *shocks* del mercado (tanto positivos como negativos).
+- **`Volume` (8.17% outliers):** El volumen de transacciones también muestra outliers, lo cual es consistente con su fuerte asimetría positiva. Estos representan períodos de actividad comercial inusualmente alta.
+- **`Year` (0% outliers):** Como era de esperar, la variable `Year` no tiene outliers, ya que es una secuencia temporal discreta.
+
+
+-----
+
+### Análisis bivariado
+
+Se examina la relación entre pares de variables para identificar patrones de asociación y posible multicolinealidad entre los predictores.
+
+*Nota: No incluimos `Today` en esta matriz, ya que `Direction` es una variable derivada de `Today` y mostrarían una relación (casi) perfecta.*
+
+```{r}
+#| label: aed-correlacion-weekly
+#| warning: false
+#| message: false
+#| fig-cap: "Matriz de análisis de pares de las variables, coloreada por Dirección."
+
+# Seleccionamos las variables de interés (predictores + respuesta)
+datos_ggpairs_weekly <- datos_2 %>%
+ dplyr::select(Lag1, Lag2, Lag3, Lag4, Lag5, Volume, Year, Direction)
+
+# Generar la matriz de pares con ggpairs
+ggpairs(
+ datos_ggpairs_weekly,
+ mapping = aes(color = Direction, fill = Direction),
+ title = "Análisis Cruzado de Variables",
+ diag = list(
+ continuous = wrap("densityDiag", alpha = 0.6)
+ ),
+ lower = list(
+ # Usamos puntos más pequeños y transparentes para datos densos
+ continuous = wrap("points", alpha = 0.3, size = 1) 
+ ),
+ upper = list(
+ # Correlación general (no por grupo)
+ continuous = wrap("cor", size = 2.5, alignPercent = 0.8) 
+ ),
+) +
+theme_minimal(base_size = 10) +
+theme(
+ plot.title = element_text(hjust = 0.5, size = 20, face = "bold"),
+ axis.text = element_text(size = 8), 
+ strip.text = element_text(size = 10, face = "bold")
+) +
+# Aplicar los colores manualmente
+scale_color_manual(values = c("Down" = "#E15759", "Up" = "#76B7B2")) +
+scale_fill_manual(values = c("Down" = "#E15759", "Up" = "#76B7B2"))
+```
+
+**Interpretación de la matriz de pares:**
+
+\-**1. Poder predictivo (relación con `Direction`)**:
+-**`Lag1` a `Lag5`**: Observe las gráficas en la diagonal (ej. `(fila 1, col 1)` para `Lag1`). Las curvas de densidad para 'Up' (azul/verde) y 'Down' (rojo) están casi perfectamente superpuestas. De manera similar, los diagramas de caja (ej. `(fila 1, col 8)` o `(fila 8, col 1)`) muestran que las medianas y los rangos intercuartílicos para 'Up' y 'Down' son casi idénticos.
+-**Conclusión (Lags)**: Visualmente, **no hay evidencia** de que los retornos de las semanas pasadas (`Lag1` a `Lag5`) tengan poder predictivo sobre la dirección de la semana actual. Esto es consistente con la hipótesis de los mercados eficientes (en su forma débil).
+-**`Volume` y `Year`**: Los gráficos de `Volume` y `Year` contra `Direction` (ej. `(fila 8, col 6)` para `Volume`) tampoco muestran una separación clara. Las distribuciones de volumen para semanas 'Up' y 'Down' son muy similares.
+
+\-**2. Multicolinealidad (relación entre predictores)**:
+-**`Lags` entre sí**: Observe el panel superior (correlaciones). Todas las correlaciones entre las variables `Lag` son extremadamente débiles (ej. `Lag1` y `Lag2` tienen $r = -0.075$). Esto es bueno, ya que significa que no son redundantes.
+-**`Year` y `Volume`**: Esta es la relación más fuerte en todo el gráfico. La correlación entre `Year` y `Volume` es **$r = 0.842$**. El gráfico de dispersión `(fila 6, col 7)` confirma una tendencia positiva muy fuerte: a medida que pasan los años, el volumen de transacciones aumenta sistemáticamente.
+-**Implicación (multicolinealidad)**: Podría existir un problema de **multicolinealidad severa** entre `Year` y `Volume`. Si ambas variables se incluyen en un modelo, los coeficientes serán difíciles de interpretar y sus errores estándar se inflarán. Para el modelado, probablemente no deberíamos incluir ambas.
+
+-----
+
+#### Análisis de multicolinealidad (VIF)
+
+El análisis de pares (`ggpairs`) reveló una fuerte correlación positiva ($r = 0.842$) entre `Year` y `Volume`. Calculamos los Factores de Inflación de la Varianza (VIF) para cuantificar formalmente esta multicolinealidad.
+
+```{r}
+#| label: aed-vif-weekly
+#| warning: false
+#| message: false
+
+# Usamos un modelo lineal temporal solo para este propósito.
+# Usamos 'Today' como respuesta temporal.
+vif_model_w <- lm(Today ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume + Year, data = datos_2)
+
+# Calcular los valores VIF
+vif_values_w <- car::vif(vif_model_w)
+
+# Crear una tabla para mostrar los resultados
+vif_table_w <- tibble(
+  Variable = names(vif_values_w),
+  VIF = vif_values_w
+)
+
+pretty_tibble(vif_table_w)
+```
+
+**Interpretación del VIF:**
+
+  - **Variables `Lag`**: Todas las variables `Lag` tienen un VIF **extremadamente cercano a 1** (todos $\approx 1.02-1.03$). Esto es excelente y confirma que no hay multicolinealidad entre los retornos de las semanas pasadas. Son predictores ortogonales (independientes) entre sí.
+  - **`Volume` y `Year`**: Estas variables tienen los VIF más altos, con **3.559** para `Volume` y **3.484** para `Year`. Estos valores confirman que comparten una cantidad sustancial de varianza, tal como se vio en la matriz de correlación. Sin embargo, estos valores **no superan los umbrales problemáticos** comunes (5 o 10).
+  - **Conclusión**: Si bien `Year` y `Volume` están fuertemente correlacionados (reflejando la tendencia de que el volumen de mercado aumenta con los años), la multicolinealidad **no es lo suficientemente severa** como para desestabilizar el modelo o inflar masivamente los errores estándar. Se podrían incluir ambas, aunque en la Cuestión N°1 solo se solicita `Volume`.
+
+-----
+
+### Análisis de outliers multivariados
+
+Finalmente, usamos la distancia de Mahalanobis para ver si existen combinaciones atípicas de predictores.
+
+```{r}
+#| label: aed-mahalanobis-weekly
+#| warning: false
+#| message: false
+#| fig-cap: "Gráfico Q-Q de las distancias de Mahalanobis al cuadrado."
+
+# --- 1. Calcular Distancias ---
+predictors_w <- datos_2 %>% dplyr::select(Lag1, Lag2, Lag3, Lag4, Lag5, Volume, Year)
+maha_dist_w <- mahalanobis(
+  x = predictors_w,
+  center = colMeans(predictors_w),
+  cov = cov(predictors_w)
+)
+
+# Añadir las distancias y un ID al dataframe
+datos_plot_maha_w <- datos_2 %>%
+  mutate(maha_dist = maha_dist_w, id = row_number())
+
+# --- 2. Crear manualmente los datos para el Q-Q Plot ---
+n_w <- nrow(datos_plot_maha_w)
+df_w <- 7 # Grados de libertad = 7 predictores
+
+qq_data_manual_w <- datos_plot_maha_w %>%
+  arrange(maha_dist) %>%
+  mutate(
+   y_qq = maha_dist,
+   x_qq = qchisq(ppoints(n_w), df = df_w)
+  )
+
+# --- 3. Crear el gráfico base (ahora es un geom_point) ---
+p_maha_w <- ggplot(qq_data_manual_w, aes(x = x_qq, y = y_qq)) +
+  geom_point(color = "#4E79A7") +
+  geom_abline(
+   intercept = 0, slope = 1,
+   linetype = "dashed", color = "red", size = 1
+  ) +
+  labs(
+   title = "Q-Q Plot de distancias de Mahalanobis vs. distribución Chi-cuadrado",
+   x = "Cuantiles teóricos (Chi-cuadrado, df=7)",
+   y = "Cuantiles muestrales (Distancias^2)"
+  ) +
+  theme_minimal(base_size = 12)
+
+# --- 4. Añadir las etiquetas (top 4 outliers) ---
+# Identificamos las 4 observaciones con mayor distancia
+outliers_maha_w <- qq_data_manual_w %>%
+  arrange(desc(y_qq)) %>%
+  head(4)
+
+# Ahora geom_text_repel usa las coordenadas x_qq, y_qq y el label
+p_maha_w + ggrepel::geom_text_repel(
+  data = outliers_maha_w,
+  aes(x = x_qq, y = y_qq, label = paste("Obs:", id)),
+  box.padding = 0.5
+)
+```
+
+**Interpretación del Gráfico Q-Q de Mahalanobis:**
+
+  - A diferencia del gráfico del conjunto `Fishing` (que seguía la línea roja bastante bien), este gráfico muestra una **desviación severa y sistemática**.
+  - La gran mayoría de los puntos (la curva azul) se encuentran muy por encima de la línea roja de referencia.
+  - Esto indica que los datos **no siguen una distribución normal multivariada**. Las colas de la distribución de los predictores son mucho más "pesadas" que las de una distribución teórica.
+  - Las observaciones etiquetadas (como la **977, 974, 976 y 975**) representan semanas con combinaciones extremadamente atípicas de retornos, volumen y año; probablemente coincidiendo con *shocks* financieros importantes (p.ej., la crisis de 2008).
+  - Esto refuerza la idea de que los modelos lineales (incluida la regresión logística) pueden tener dificultades para manejar la naturaleza extrema de los datos financieros.
+
+-----
+
+## Cuestión N°1
+
+Utilice el conjunto de datos completo para realizar una regresión logística con `Direction` como la respuesta y las cinco variables `Lag` más `Volume` como predictores. ¿Cuáles predictores son estadísticamente significativos?
+
+### Marco teórico: regresión logística
+
+Para modelar una variable de respuesta binaria como `Direction` ('Up' o 'Down'), utilizamos la **regresión logística**. Este es un Modelo Lineal Generalizado (GLM) que pertenece a la familia binomial.
+
+Sus componentes son:
+
+1.  **Componente aleatoria**: La variable de respuesta $Y_i$ (que representa 'Up' o 'Down') sigue una distribución de Bernoulli, donde la probabilidad de éxito (ej. 'Up') es $p_i$. $Y_i \sim \text{Bernoulli}(p_i)$.
+
+2.  **Componente sistemática**: Es el predictor lineal $\eta_i$, que es una combinación lineal de las variables predictoras (los 5 `Lag` y `Volume`).
+    $$\eta_i = \beta_0 + \beta_1 \text{Lag1}_i + \beta_2 \text{Lag2}_i + \beta_3 \text{Lag3}_i + \beta_4 \text{Lag4}_i + \beta_5 \text{Lag5}_i + \beta_6 \text{Volume}_i$$
+
+3.  **Función de enlace (logit)**: La regresión logística utiliza la función "logit" para conectar la probabilidad $p_i$ con el predictor lineal $\eta_i$. El logit es el logaritmo de las "odds" (probabilidad de éxito / probabilidad de fracaso).
+    $$g(p_i) = \log\left(\frac{p_i}{1-p_i}\right) = \eta_i$$
+    Invirtiendo esta relación, la probabilidad de que el mercado suba ('Up') se modela como:
+    $$p_i = P(Y_i = \text{'Up'} | X_i) = \frac{e^{\eta_i}}{1 + e^{\eta_i}}$$
+
+Para determinar la significancia estadística, examinamos el **valor-p** de cada coeficiente. Un valor-p bajo (comúnmente $p < 0.05$) sugiere que podemos rechazar la hipótesis nula de que el coeficiente es cero (es decir, que el predictor no tiene efecto), indicando que la variable es un predictor estadísticamente significativo.
+
+### Ajuste del modelo y resultados
+
+Ajustamos el modelo logístico usando la función `glm()` con `family = binomial`.
+
+```{r}
+#| label: modelo-log-1
+#| warning: false
+#| message: false
+
+#--- 1. AJUSTE DEL MODELO LOGÍSTICO ---
+modelo_log_1 <- glm(
+  Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume,
+  data = datos_2,
+  family = binomial(link = "logit")
+)
+
+#--- 2. ANÁLISIS DE COEFICIENTES ---
+coef_table_log_1 <- broom::tidy(modelo_log_1, conf.int = TRUE) %>%
+  mutate(
+    # El Odds Ratio (OR) es e^(estimación)
+    odds_ratio = exp(estimate),
+    # Calculamos el valor-s
+    s_value = -log2(p.value)
+  ) %>%
+  # Reordenamos para mayor claridad
+  dplyr::select(
+    term, estimate, std.error, odds_ratio,
+    statistic, p.value, s_value, conf.low, conf.high
+  )
+
+# Mostramos la tabla de coeficientes
+pretty_tibble(coef_table_log_1)
+```
+
+### Interpretación de los Resultados
+
+Para responder a la pregunta, analizamos la columna `p.value` (o `s_value`) de la tabla de coeficientes:
+
+  - **`(Intercept)`**: $p = 0.0019$ ($s = 9.04$). Es estadísticamente significativo.
+  - **`Lag1`**: $p = 0.118$ ($s = 3.08$). No es estadísticamente significativo.
+  - **`Lag2`**: $p = 0.0296$ ($s = 5.08$). Este valor es menor que $0.05$, indicando que **`Lag2` es estadísticamente significativo**.
+  - **`Lag3`**: $p = 0.547$ ($s = 0.87$). No es estadísticamente significativo.
+  - **`Lag4`**: $p = 0.294$ ($s = 1.77$). No es estadísticamente significativo.
+  - **`Lag5`**: $p = 0.583$ ($s = 0.78$). No es estadísticamente significativo.
+  - **`Volume`**: $p = 0.538$ ($s = 0.90$). No es estadísticamente significativo.
+
+**Respuesta:**
+
+Basado en el criterio de $p < 0.05$, **el único predictor que es estadísticamente significativo es `Lag2`** (el retorno del mercado de hace dos semanas).
+
+El coeficiente positivo para `Lag2` (`estimate` = 0.0584) y el `odds_ratio` de **1.060**, sugieren que por cada punto porcentual de aumento en el retorno de hace dos semanas, las "odds" (momios) de que el mercado suba ('Up') esta semana se incrementan en aproximadamente un 6%.
+
+Sin embargo, es importante notar que el resto de los predictores, incluidos todos los demás `Lag` y el `Volume`, no muestran evidencia estadística de tener una relación con la dirección del mercado de la semana actual en este modelo. Esto se alinea con lo que observamos visualmente en el EDA, donde las distribuciones de 'Up' y 'Down' estaban casi perfectamente superpuestas para todas las variables `Lag`.
+
+-----
+
+## Cuestión N°2
+
+Calcular la matriz de confusión y la precisión de la predicción. Graficar la curva ROC. Comente los resultados.
+
+### Marco teórico: evaluación del modelo
+
+Para evaluar un modelo de clasificación binaria como el nuestro, no basta con mirar los p-valores. Necesitamos saber qué tan bien sus predicciones se comparan con la realidad.
+
+1.  **Matriz de Confusión**: Es una tabla que compara las clases reales (los datos de `Direction`) con las clases predichas por el modelo. Para obtener "clases predichas" (texto 'Up' o 'Down') desde "probabilidades predichas" (números entre 0 y 1), debemos usar un **umbral de corte**. El umbral estándar es 0.5 (si $P(\text{Up}) > 0.5$, predecimos 'Up').
+
+    | | Predicho 'Up' | Predicho 'Down' |
+    | :--- | :--- | :--- |
+    | **Real 'Up'** | Verdaderos Positivos (TP) | Falsos Negativos (FN) |
+    | **Real 'Down'** | Falsos Positivos (FP) | Verdaderos Negativos (TN) |
+
+2.  **Precisión (Accuracy)**: Es la métrica más simple. Mide el porcentaje de predicciones correctas.
+    $$\text{Precisión} = \frac{TP + TN}{\text{Total de Observaciones}}$$
+    *Advertencia*: La precisión puede ser engañosa si las clases están desbalanceadas. Una métrica de referencia útil es la **Tasa de Error Nula (Null Error Rate)**, que es la precisión que obtendríamos si siempre predijéramos la clase más frecuente. En nuestro caso (55.6% 'Up'), la tasa de error nula es 55.6%. Un buen modelo debe superar esto.
+
+3.  **Curva ROC (Receiver Operating Characteristic)**: Es una herramienta gráfica superior. En lugar de usar un solo umbral (como 0.5), grafica el desempeño del modelo en *todos los umbrales posibles*.
+
+      * **Eje Y**: Tasa de Verdaderos Positivos (Sensibilidad) = $\frac{TP}{TP + FN}$
+      * **Eje X**: Tasa de Falsos Positivos (1 - Especificidad) = $\frac{FP}{FP + TN}$
+      * Una línea diagonal (de 0,0 a 1,1) representa el azar (un modelo inútil). Un buen modelo tiene una curva que se "abomba" hacia la esquina superior izquierda.
+
+4.  **AUC (Area Under the Curve)**: Es el área bajo la curva ROC. Cuantifica la capacidad *global* del modelo para discriminar entre las dos clases.
+
+      * **AUC = 1.0**: Clasificador perfecto.
+      * **AUC = 0.5**: Clasificador inútil (equivale al azar).
+      * **AUC \> 0.7**: Se considera un modelo aceptable.
+
+### Cálculo de la matriz de confusión y precisión
+
+Primero, generamos las predicciones de probabilidad del modelo y las convertimos en clases usando el umbral de 0.5.
+
+```{r}
+#| label: modelo-log-2-matriz
+#| warning: false
+#| message: false
+
+#--- 1. OBTENER PROBABILIDADES ---
+probabilidades_up <- predict(modelo_log_1, type = "response")
+
+#--- 2. CONVERTIR PROBABILIDADES A CLASES (Umbral 0.5) ---
+predicciones_clase <- ifelse(probabilidades_up > 0.5, "Up", "Down")
+
+# Aseguramos que los niveles del factor sean los mismos para la tabla
+predicciones_clase <- factor(predicciones_clase, levels = levels(datos_2$Direction))
+reales_clase <- datos_2$Direction
+
+#--- 3. CREAR LA MATRIZ DE CONFUSIÓN ---
+matriz_conf <- table(
+  `Clase Real` = reales_clase,
+  `Clase Predicha` = predicciones_clase
+)
+
+print(matriz_conf)
+
+#--- 4. CALCULAR PRECISIÓN (ACCURACY) ---
+precision <- sum(diag(matriz_conf)) / sum(matriz_conf)
+
+#--- 5. CALCULAR TASA DE ERROR NULA (Baseline) ---
+tasa_nula <- max(table(reales_clase)) / length(reales_clase)
+
+#--- 6. MOSTRAR RESULTADOS ---
+resumen_precision <- tibble(
+  Metrica = c("Precisión del Modelo (Accuracy)", "Precisión de Línea Base (Tasa Nula)"),
+  Valor = c(precision, tasa_nula)
+)
+
+pretty_tibble(resumen_precision, show_types = FALSE)
+```
+
+### Cálculo de la curva ROC y AUC
+
+Ahora, usamos el paquete `performance` para calcular la curva ROC y el AUC. Estos cálculos utilizan las *probabilidades* continuas, no las clases predichas, por lo que son una mejor evaluación.
+
+```{r}
+#| label: modelo-log-2-roc
+#| warning: false
+#| message: false
+#| fig-cap: "Curva ROC para el modelo logístico."
+
+#--- 2. OBTENER DATOS (del modelo y los datos reales) ---
+# 'modelo_log_1' ya existe del chunk anterior
+# 'datos_2' ya existe del setup
+
+# (a) Probabilidades predichas por el modelo
+probabilidades <- predict(modelo_log_1, type = "response")
+
+# (b) Valores reales (la variable Direction)
+reales <- datos_2$Direction
+
+#--- 3. CALCULAR OBJETO ROC y AUC (con pROC) ---
+# pROC::roc() crea el objeto con todos los cálculos
+# Sintaxis: roc(variable_real, variable_predicha)
+roc_obj <- pROC::roc(reales, probabilidades)
+
+# pROC::auc() extrae el valor del AUC
+auc_valor <- pROC::auc(roc_obj)
+
+#--- 4. OBTENER DATOS PARA GGPLOT ---
+# pROC::coords() nos da los puntos de la curva
+# Pedimos "all" para una curva suave
+# 'ret = c("sensitivity", "1-specificity")' nos da los ejes que queremos
+roc_data <- pROC::coords(roc_obj, "all", ret = c("sensitivity", "1-specificity"))
+
+# Renombramos la columna '1-specificity' para que sea fácil de usar en ggplot
+# Nota: '1-specificity' es el nombre literal que pROC le da a la columna
+roc_data$Specificity_Inv <- roc_data$"1-specificity"
+
+#--- 5. GRAFICAR LA CURVA ROC ---
+# Ahora usamos roc_data con las nuevas columnas
+ggplot(roc_data, aes(x = Specificity_Inv, y = sensitivity)) +
+  geom_path(color = "#0072B2", linewidth = 1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  
+  # La anotación ahora funciona porque 'auc_valor' es numérico
+  annotate(
+   "text", x = 0.75, y = 0.25,
+   label = sprintf("AUC = %.4f", auc_valor), 
+   size = 5
+  ) +
+  
+  labs(
+   title = "Curva ROC del modelo logístico",
+   x = "Tasa de falsos positivos (1 - Especificidad)",
+   y = "Tasa de verdaderos positivos (Sensibilidad)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+```
+
+### Interpretación y Comentarios
+
+1.  **Matriz de Confusión y Precisión**:
+
+      * La precisión del modelo es **56.11%**.
+      * La precisión de línea base (Tasa Nula), que obtendríamos si *siempre* adivináramos 'Up', es **55.56%**.
+      * **Conclusión**: El modelo es solo un **0.55%** mejor que simplemente adivinar la clase más frecuente. Su desempeño es extremadamente pobre.
+      * La matriz de confusión revela *por qué*: el modelo predijo 'Up' 987 veces (430 + 557) y 'Down' 102 veces (54 + 48). Sin embargo, tiene una tasa muy alta de **Falsos Positivos (430)** (predijo 'Up' cuando en realidad fue 'Down') y una tasa muy baja de **Verdaderos Negativos (solo 54)** (predijo 'Down' y acertó). El modelo es terrible para identificar las semanas de 'bajada'.
+
+2.  **Curva ROC y AUC**:
+
+      * La curva ROC (línea azul) está **extremadamente cerca de la línea diagonal roja** (que representa el azar).
+      * El valor **AUC es 0.5537**. Un valor de 0.5 es azar y 1.0 es perfecto. Este valor confirma que la capacidad del modelo para discriminar entre una semana 'Up' y una 'Down' es casi nula.
+
+**Comentario Final**:
+El modelo logístico, utilizando los cinco `Lag` y `Volume`, **no es útil para la predicción**.
+
+Aunque `Lag2` fue "estadísticamente significativo" (con un $p=0.029$), su efecto es tan débil que no se traduce en un poder predictivo real. La precisión del modelo es apenas mejor que adivinar al azar, y el AUC de 0.554 confirma que el modelo no tiene una capacidad real para distinguir entre los días de subida y bajada. Esto es muy común en los datos financieros, que a menudo se asemejan a un "paseo aleatorio" (random walk).
+
+-----
+
+## Cuestión N°3
+
+Ahora ajuste el modelo de regresión logística usando los datos de 1990 a 2008, con `Lag2` como el único predictor. Calcular la matriz de confusión y la precisión de la predicción para los datos no considerados (es decir, los datos de 2009 y 2010). Graficar la curva ROC. Comente los resultados.
+
+### Metodología: División Train/Test
+
+Este es un enfoque de validación mucho más robusto. En lugar de evaluar el modelo en los mismos datos que usó para aprender (lo que puede llevar a un optimismo excesivo), simulamos un escenario del mundo real:
+
+1.  **Datos de Entrenamiento (Train):** Crearemos un subconjunto (`datos_train`) con todas las observaciones donde `Year` es menor o igual a 2008. El modelo *solo* verá estos datos para "aprender".
+2.  **Datos de Prueba (Test):** Crearemos un subconjunto (`datos_test`) con las observaciones donde `Year` es 2009 o 2010. El modelo *nunca* verá estos datos durante el ajuste.
+3.  **Evaluación:** Ajustaremos el modelo `Direction ~ Lag2` usando `datos_train` y luego usaremos este modelo para predecir los valores de `Direction` en `datos_test`. La matriz de confusión, la precisión y la curva ROC se calcularán comparando estas predicciones con los valores *reales* de `datos_test`.
+
+### Ajuste del modelo y división de datos
+
+Primero, separamos los datos y ajustamos el modelo de regresión logística simple.
+
+```{r}
+#| label: modelo-log-3-split
+#| warning: false
+#| message: false
+
+#--- 1. DIVIDIR LOS DATOS ---
+datos_train <- datos_2 %>% filter(Year <= 2008)
+datos_test  <- datos_2 %>% filter(Year > 2008)
+
+# Mostramos las dimensiones para confirmar
+print(paste("Observaciones de Entrenamiento (<= 2008):", nrow(datos_train)))
+
+print(paste("Observaciones de Prueba (2009-2010):", nrow(datos_test)))
+
+#--- 2. AJUSTAR EL MODELO (solo en datos de train) ---
+modelo_log_2 <- glm(
+  Direction ~ Lag2,
+  data = datos_train,
+  family = binomial(link = "logit")
+)
+
+# vemos los coeficientes del modelo entrenado
+pretty_tibble(broom::tidy(modelo_log_2))
+```
+
+### Matriz de Confusión y Precisión (Datos de Test)
+
+Ahora, usamos `modelo_log_2` para predecir los datos de `datos_test`.
+
+```{r}
+#| label: modelo-log-3-matriz
+#| warning: false
+#| message: false
+
+#--- 3. OBTENER PREDICCIONES (en datos de test) ---
+probabilidades_test <- predict(modelo_log_2, newdata = datos_test, type = "response")
+
+#--- 4. CONVERTIR PROBABILIDADES A CLASES (Umbral 0.5) ---
+predicciones_clase_test <- ifelse(probabilidades_test > 0.5, "Up", "Down")
+reales_clase_test <- datos_test$Direction
+
+# Aseguramos que los niveles del factor sean los mismos
+predicciones_clase_test <- factor(predicciones_clase_test, levels = levels(reales_clase_test))
+
+#--- 5. CREAR MATRIZ DE CONFUSIÓN (Test Set) ---
+matriz_conf_test <- table(
+  `Clase Real (Test)` = reales_clase_test,
+  `Clase Predicha (Test)` = predicciones_clase_test
+)
+
+print(matriz_conf_test)
+
+#--- 6. CALCULAR MÉTRICAS (Test Set) ---
+precision_test <- sum(diag(matriz_conf_test)) / sum(matriz_conf_test)
+
+# Tasa nula para el *conjunto de prueba*
+tasa_nula_test <- max(table(reales_clase_test)) / length(reales_clase_test)
+
+resumen_precision_test <- tibble(
+  Metrica = c("Precisión del Modelo (Test)", "Precisión de Línea Base (Test)"),
+  Valor = c(precision_test, tasa_nula_test)
+)
+
+pretty_tibble(resumen_precision_test, show_types = FALSE)
+```
+
+### Curva ROC y AUC (Datos de Test)
+
+Finalmente, evaluamos la capacidad de discriminación del modelo en el conjunto de prueba.
+
+```{r}
+#| label: modelo-log-3-roc
+#| warning: false
+#| message: false
+#| fig-cap: "Curva ROC para el modelo logístico (datos de test 2009-2010)."
+
+#--- 2. OBTENER DATOS (del modelo de 'train' y datos de 'test') ---
+
+# (a) Probabilidades predichas por el modelo (usando newdata = datos_test)
+probabilidades_test <- predict(modelo_log_2, newdata = datos_test, type = "response")
+
+# (b) Valores reales (del conjunto de prueba)
+reales_test <- datos_test$Direction
+
+#--- 3. CALCULAR OBJETO ROC y AUC (con pROC) ---
+# Comparamos los valores reales del test con las predicciones para el test
+roc_obj_test <- pROC::roc(reales_test, probabilidades_test)
+
+# Extraemos el AUC
+auc_valor_test <- pROC::auc(roc_obj_test)
+
+#--- 4. OBTENER DATOS PARA GGPLOT ---
+roc_data_test <- pROC::coords(roc_obj_test, "all", ret = c("sensitivity", "1-specificity"))
+
+# Renombramos la columna '1-specificity'
+roc_data_test$Specificity_Inv <- roc_data_test$"1-specificity"
+
+#--- 5. GRAFICAR LA CURVA ROC ---
+ggplot(roc_data_test, aes(x = Specificity_Inv, y = sensitivity)) +
+  geom_path(color = "#0072B2", linewidth = 1.2) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  
+  annotate(
+    "text", x = 0.75, y = 0.25,
+    label = sprintf("AUC = %.4f", auc_valor_test),
+    size = 5
+  ) +
+  
+  labs(
+    title = "Curva ROC (Datos de Test 2009-2010)",
+    x = "Tasa de Falsos Positivos (1 - Especificidad)",
+    y = "Tasa de Verdaderos Positivos (Sensibilidad)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"))
+```
+
+### Interpretación y Comentarios
+
+1.  **Precisión y Matriz de Confusión**:
+
+      * La precisión del modelo en los datos de prueba (2009-2010) fue del **62.5%**.
+      * La precisión de línea base (Tasa Nula) para este período fue del **58.65%** (correspondiente a adivinar siempre 'Up', la clase más frecuente en esos dos años).
+      * **Conclusión**: El modelo logró una precisión casi 4 puntos porcentuales por encima de la línea base, lo que indica un poder predictivo real (aunque modesto) *utilizando el umbral de 0.5*.
+      * La matriz de confusión muestra que el modelo tuvo éxito:
+          * Predijo correctamente **56** de las 61 semanas 'Up' (Verdaderos Positivos).
+          * Predijo correctamente **9** de las 43 semanas 'Down' (Verdaderos Negativos).
+      * El principal error del modelo fue predecir 'Up' en 34 semanas que en realidad fueron 'Down' (Falsos Positivos). Esto sugiere que el modelo está sesgado hacia predecir 'Up', pero dado que acierta la mayoría de las veces (62.5%), es un sesgo rentable.
+
+2.  **Curva ROC y AUC**:
+
+      * El **AUC en el conjunto de prueba fue de 0.4537**.
+      * Este valor está **por debajo de 0.5 (azar)**. La curva ROC se sitúa visiblemente por debajo de la línea diagonal roja, lo que indica que la capacidad *global* de discriminación del modelo (a través de todos los umbrales) es peor que adivinar al azar.
+
+**Comentario Final**:
+Los resultados son mixtos y revelan una discrepancia entre las métricas.
+
+  * Por un lado, la **precisión (62.5%)** con un umbral de 0.5 es *mejor* que la línea base (58.65%). Esto sugiere que, con este umbral específico, la estrategia de usar `Lag2` fue modestamente rentable en 2009-2010.
+  * Por otro lado, el **AUC (0.4537)** es *peor* que el azar (0.5). Esto indica que el modelo no es un buen discriminador; sus probabilidades asignadas a las clases 'Up' y 'Down' no son fiables para separar las clases en general.
+
+En resumen, aunque el modelo simple (solo `Lag2`) superó a la línea base en precisión con el umbral estándar, su pobre AUC sugiere que la significancia estadística ($p=0.043$) encontrada en el conjunto de entrenamiento no se tradujo en un poder de discriminación robusto en los datos de prueba.
