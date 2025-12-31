@@ -1073,7 +1073,6 @@ print(grafico_combinado)
 
 **Comentario Final**: El modelo Quasi-Poisson proporciona conclusiones mucho más fiables que el modelo Poisson. Confirma que la sobredispersión era severa ($\hat{\phi} \approx 37$), pero que los predictores son tan fuertes que su significancia estadística se mantiene incluso después de la corrección. Sin embargo, el mal ajuste visual sugiere que este modelo aún no captura adecuadamente la estructura de los datos.
 
-
 ------------------------------------------------------------------------
 
 ## Cuestión N°3
@@ -1254,12 +1253,11 @@ print(grafico_combinado_nb)
 
 **Comentario Final**: El modelo Binomial Negativo es **claramente superior** a los modelos Poisson y Quasi-Poisson. El modelo Poisson falló catastróficamente debido a la sobredispersión ($\hat{\phi} \approx 41$). El modelo Quasi-Poisson *corrigió* los p-valores para esa sobredispersión, pero no mejoró el ajuste del modelo en sí. El modelo Binomial Negativo, en cambio, *modela* exitosamente la sobredispersión (estimando $\theta \approx 3.03$), lo que resulta en un modelo que es **estadísticamente adecuado** (Dev/GL $\approx 1.11$, p-valor = 0.175) y proporciona estimaciones fiables.
 
-
------
+------------------------------------------------------------------------
 
 # Análisis del conjunto de datos "Weekly"
 
-En esta sección, se realiza un análisis exploratorio del conjunto de datos `Weekly` (cargado en la variable `datos_2`), que forma parte del paquete `ISLR`. Este conjunto de datos contiene 1.089 retornos semanales del índice bursátil S\&P 500 entre 1990 y 2010.
+En esta sección, se realiza un análisis exploratorio del conjunto de datos `Weekly` (cargado en la variable `datos_2`), que forma parte del paquete `ISLR`. Este conjunto de datos contiene 1.089 retornos semanales del índice bursátil S&P 500 entre 1990 y 2010.
 
 El objetivo es comprender las características de las variables, que incluyen el año (`Year`), los retornos de las 5 semanas anteriores (`Lag1` a `Lag5`), el volumen de transacciones (`Volume`), el retorno de la semana actual (`Today`) y la dirección del mercado en la semana actual (`Direction` - 'Up' o 'Down').
 
@@ -1286,7 +1284,7 @@ print(colSums(is.na(datos_2)))
 
 El conjunto de datos está completo y no contiene valores `NA`. No se requiere limpieza adicional.
 
------
+------------------------------------------------------------------------
 
 ## Análisis exploratorio de datos (EDA)
 
@@ -1296,7 +1294,7 @@ Investigaremos la distribución de cada variable y las relaciones entre ellas. E
 
 Analizaremos cada variable individualmente.
 
------
+------------------------------------------------------------------------
 
 #### Variable de Respuesta: `Direction` (Dirección del mercado)
 
@@ -1338,11 +1336,9 @@ legend.position = "none" # Ocultamos la leyenda
 
 **Interpretación de `Direction`:**
 
-\-**Balance de Clases:** El conjunto de datos está razonablemente balanceado. Hay **605** observaciones de 'Up' (55.56%) y **484** de 'Down' (44.44%).
-\-**Tendencia Ligera:** Existe una ligera tendencia histórica a que más semanas terminen con retornos positivos que negativos en este período de 20 años.
-\-**Implicación para el Modelo:** Este balance es bueno para el modelado. No hay un desbalance severo que pudiera sesgar un modelo de clasificación (como la regresión logística).
+\-**Balance de Clases:** El conjunto de datos está razonablemente balanceado. Hay **605** observaciones de 'Up' (55.56%) y **484** de 'Down' (44.44%). -**Tendencia Ligera:** Existe una ligera tendencia histórica a que más semanas terminen con retornos positivos que negativos en este período de 20 años. -**Implicación para el Modelo:** Este balance es bueno para el modelado. No hay un desbalance severo que pudiera sesgar un modelo de clasificación (como la regresión logística).
 
------
+------------------------------------------------------------------------
 
 #### Variable `Today` (Retorno actual)
 
@@ -1401,10 +1397,9 @@ p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
 
 **Interpretación de `Today`:**
 
-\-**Distribución (Casi) Simétrica:** La distribución está centrada cerca de cero. La **media (0.1499)** y la **mediana (0.241)** son muy cercanas. El coeficiente de asimetría (**-0.4805**) es negativo, indicando un ligero sesgo a la izquierda (la media está a la izquierda de la mediana), lo cual es visible en el gráfico.
-\-**Colas Pesadas (Leptocúrtica):** El coeficiente de curtosis (**8.685**) es significativamente mayor que 3 (el de una normal). Esto confirma lo que se ve en el gráfico: la distribución tiene un pico más agudo y "colas más pesadas" (más valores extremos, tanto positivos como negativos) de lo que se esperaría en una distribución normal. Este es un rasgo característico de los retornos financieros.
+\-**Distribución (Casi) Simétrica:** La distribución está centrada cerca de cero. La **media (0.1499)** y la **mediana (0.241)** son muy cercanas. El coeficiente de asimetría (**-0.4805**) es negativo, indicando un ligero sesgo a la izquierda (la media está a la izquierda de la mediana), lo cual es visible en el gráfico. -**Colas Pesadas (Leptocúrtica):** El coeficiente de curtosis (**8.685**) es significativamente mayor que 3 (el de una normal). Esto confirma lo que se ve en el gráfico: la distribución tiene un pico más agudo y "colas más pesadas" (más valores extremos, tanto positivos como negativos) de lo que se esperaría en una distribución normal. Este es un rasgo característico de los retornos financieros.
 
------
+------------------------------------------------------------------------
 
 #### Variable `Lag1` (Retorno semana anterior)
 
@@ -1437,7 +1432,7 @@ pretty_tibble(stats_summary, n = 1, show_types = FALSE)
 
 \-**Distribución Idéntica:** Como era de esperar, las estadísticas de `Lag1` (Media=0.1506, Mediana=0.241, Skewness=-0.4813, Kurtosis=8.6848) son casi idénticas a las de `Today`. Esto tiene sentido lógico, ya que el retorno de "la semana pasada" es simplemente el retorno de "esta semana" desplazado en el tiempo. Las variables `Lag2` a `Lag5` muestran propiedades estadísticas idénticas.
 
------
+------------------------------------------------------------------------
 
 #### Variable `Volume` (Volumen de transacciones)
 
@@ -1496,12 +1491,9 @@ p_hist + p_box + plot_layout(ncol = 1, heights = c(4, 1))
 
 **Interpretación de `Volume`:**
 
-\-**Fuerte Asimetría Positiva:** A diferencia de los retornos, el volumen tiene un fuerte sesgo a la derecha (**Skewness = 1.618**). La **media (1.575)** es significativamente mayor que la **mediana (1.003)**.
-\-**Distribución Bimodal/Multimodal:** El gráfico de densidad muestra al menos dos (posiblemente tres) picos claros. Esto sugiere que hubo diferentes "regímenes" de volumen de transacciones durante el período de 20 años.
-\-**Implicación (No Estacionariedad):** Es muy probable que el volumen de transacciones no sea estacionario, es decir, que haya aumentado con el tiempo. Esto lo confirmaremos en el análisis bivariado al compararlo con `Year`.
+\-**Fuerte Asimetría Positiva:** A diferencia de los retornos, el volumen tiene un fuerte sesgo a la derecha (**Skewness = 1.618**). La **media (1.575)** es significativamente mayor que la **mediana (1.003)**. -**Distribución Bimodal/Multimodal:** El gráfico de densidad muestra al menos dos (posiblemente tres) picos claros. Esto sugiere que hubo diferentes "regímenes" de volumen de transacciones durante el período de 20 años. -**Implicación (No Estacionariedad):** Es muy probable que el volumen de transacciones no sea estacionario, es decir, que haya aumentado con el tiempo. Esto lo confirmaremos en el análisis bivariado al compararlo con `Year`.
 
-
------
+------------------------------------------------------------------------
 
 ### Análisis de valores atípicos (Outliers)
 
@@ -1535,12 +1527,11 @@ pretty_tibble(outlier_summary_w)
 
 **Interpretación del Análisis de Outliers:**
 
-- **Variables `Lag` (entre 3.31% y 3.40% de outliers):** Todas las variables de retornos pasados (`Lag1` a `Lag5`) muestran un número significativo de outliers. Esto es **completamente esperado** en datos financieros y confirma el análisis de curtosis (colas pesadas). Estos outliers no son errores, sino que representan semanas de alta volatilidad o *shocks* del mercado (tanto positivos como negativos).
-- **`Volume` (8.17% outliers):** El volumen de transacciones también muestra outliers, lo cual es consistente con su fuerte asimetría positiva. Estos representan períodos de actividad comercial inusualmente alta.
-- **`Year` (0% outliers):** Como era de esperar, la variable `Year` no tiene outliers, ya que es una secuencia temporal discreta.
+-   **Variables `Lag` (entre 3.31% y 3.40% de outliers):** Todas las variables de retornos pasados (`Lag1` a `Lag5`) muestran un número significativo de outliers. Esto es **completamente esperado** en datos financieros y confirma el análisis de curtosis (colas pesadas). Estos outliers no son errores, sino que representan semanas de alta volatilidad o *shocks* del mercado (tanto positivos como negativos).
+-   **`Volume` (8.17% outliers):** El volumen de transacciones también muestra outliers, lo cual es consistente con su fuerte asimetría positiva. Estos representan períodos de actividad comercial inusualmente alta.
+-   **`Year` (0% outliers):** Como era de esperar, la variable `Year` no tiene outliers, ya que es una secuencia temporal discreta.
 
-
------
+------------------------------------------------------------------------
 
 ### Análisis bivariado
 
@@ -1588,17 +1579,11 @@ scale_fill_manual(values = c("Down" = "#E15759", "Up" = "#76B7B2"))
 
 **Interpretación de la matriz de pares:**
 
-\-**1. Poder predictivo (relación con `Direction`)**:
--**`Lag1` a `Lag5`**: Observe las gráficas en la diagonal (ej. `(fila 1, col 1)` para `Lag1`). Las curvas de densidad para 'Up' (azul/verde) y 'Down' (rojo) están casi perfectamente superpuestas. De manera similar, los diagramas de caja (ej. `(fila 1, col 8)` o `(fila 8, col 1)`) muestran que las medianas y los rangos intercuartílicos para 'Up' y 'Down' son casi idénticos.
--**Conclusión (Lags)**: Visualmente, **no hay evidencia** de que los retornos de las semanas pasadas (`Lag1` a `Lag5`) tengan poder predictivo sobre la dirección de la semana actual. Esto es consistente con la hipótesis de los mercados eficientes (en su forma débil).
--**`Volume` y `Year`**: Los gráficos de `Volume` y `Year` contra `Direction` (ej. `(fila 8, col 6)` para `Volume`) tampoco muestran una separación clara. Las distribuciones de volumen para semanas 'Up' y 'Down' son muy similares.
+\-**1. Poder predictivo (relación con `Direction`)**: -**`Lag1` a `Lag5`**: Observe las gráficas en la diagonal (ej. `(fila 1, col 1)` para `Lag1`). Las curvas de densidad para 'Up' (azul/verde) y 'Down' (rojo) están casi perfectamente superpuestas. De manera similar, los diagramas de caja (ej. `(fila 1, col 8)` o `(fila 8, col 1)`) muestran que las medianas y los rangos intercuartílicos para 'Up' y 'Down' son casi idénticos. -**Conclusión (Lags)**: Visualmente, **no hay evidencia** de que los retornos de las semanas pasadas (`Lag1` a `Lag5`) tengan poder predictivo sobre la dirección de la semana actual. Esto es consistente con la hipótesis de los mercados eficientes (en su forma débil). -**`Volume` y `Year`**: Los gráficos de `Volume` y `Year` contra `Direction` (ej. `(fila 8, col 6)` para `Volume`) tampoco muestran una separación clara. Las distribuciones de volumen para semanas 'Up' y 'Down' son muy similares.
 
-\-**2. Multicolinealidad (relación entre predictores)**:
--**`Lags` entre sí**: Observe el panel superior (correlaciones). Todas las correlaciones entre las variables `Lag` son extremadamente débiles (ej. `Lag1` y `Lag2` tienen $r = -0.075$). Esto es bueno, ya que significa que no son redundantes.
--**`Year` y `Volume`**: Esta es la relación más fuerte en todo el gráfico. La correlación entre `Year` y `Volume` es **$r = 0.842$**. El gráfico de dispersión `(fila 6, col 7)` confirma una tendencia positiva muy fuerte: a medida que pasan los años, el volumen de transacciones aumenta sistemáticamente.
--**Implicación (multicolinealidad)**: Podría existir un problema de **multicolinealidad severa** entre `Year` y `Volume`. Si ambas variables se incluyen en un modelo, los coeficientes serán difíciles de interpretar y sus errores estándar se inflarán. Para el modelado, probablemente no deberíamos incluir ambas.
+\-**2. Multicolinealidad (relación entre predictores)**: -**`Lags` entre sí**: Observe el panel superior (correlaciones). Todas las correlaciones entre las variables `Lag` son extremadamente débiles (ej. `Lag1` y `Lag2` tienen $r = -0.075$). Esto es bueno, ya que significa que no son redundantes. -**`Year` y `Volume`**: Esta es la relación más fuerte en todo el gráfico. La correlación entre `Year` y `Volume` es $r = 0.842$. El gráfico de dispersión `(fila 6, col 7)` confirma una tendencia positiva muy fuerte: a medida que pasan los años, el volumen de transacciones aumenta sistemáticamente. -**Implicación (multicolinealidad)**: Podría existir un problema de **multicolinealidad severa** entre `Year` y `Volume`. Si ambas variables se incluyen en un modelo, los coeficientes serán difíciles de interpretar y sus errores estándar se inflarán. Para el modelado, probablemente no deberíamos incluir ambas.
 
------
+------------------------------------------------------------------------
 
 #### Análisis de multicolinealidad (VIF)
 
@@ -1627,11 +1612,11 @@ pretty_tibble(vif_table_w)
 
 **Interpretación del VIF:**
 
-  - **Variables `Lag`**: Todas las variables `Lag` tienen un VIF **extremadamente cercano a 1** (todos $\approx 1.02-1.03$). Esto es excelente y confirma que no hay multicolinealidad entre los retornos de las semanas pasadas. Son predictores ortogonales (independientes) entre sí.
-  - **`Volume` y `Year`**: Estas variables tienen los VIF más altos, con **3.559** para `Volume` y **3.484** para `Year`. Estos valores confirman que comparten una cantidad sustancial de varianza, tal como se vio en la matriz de correlación. Sin embargo, estos valores **no superan los umbrales problemáticos** comunes (5 o 10).
-  - **Conclusión**: Si bien `Year` y `Volume` están fuertemente correlacionados (reflejando la tendencia de que el volumen de mercado aumenta con los años), la multicolinealidad **no es lo suficientemente severa** como para desestabilizar el modelo o inflar masivamente los errores estándar. Se podrían incluir ambas, aunque en la Cuestión N°1 solo se solicita `Volume`.
+-   **Variables `Lag`**: Todas las variables `Lag` tienen un VIF **extremadamente cercano a 1** (todos $\approx 1.02-1.03$). Esto es excelente y confirma que no hay multicolinealidad entre los retornos de las semanas pasadas. Son predictores ortogonales (independientes) entre sí.
+-   **`Volume` y `Year`**: Estas variables tienen los VIF más altos, con **3.559** para `Volume` y **3.484** para `Year`. Estos valores confirman que comparten una cantidad sustancial de varianza, tal como se vio en la matriz de correlación. Sin embargo, estos valores **no superan los umbrales problemáticos** comunes (5 o 10).
+-   **Conclusión**: Si bien `Year` y `Volume` están fuertemente correlacionados (reflejando la tendencia de que el volumen de mercado aumenta con los años), la multicolinealidad **no es lo suficientemente severa** como para desestabilizar el modelo o inflar masivamente los errores estándar. Se podrían incluir ambas, aunque en la Cuestión N°1 solo se solicita `Volume`.
 
------
+------------------------------------------------------------------------
 
 ### Análisis de outliers multivariados
 
@@ -1696,13 +1681,13 @@ p_maha_w + ggrepel::geom_text_repel(
 
 **Interpretación del Gráfico Q-Q de Mahalanobis:**
 
-  - A diferencia del gráfico del conjunto `Fishing` (que seguía la línea roja bastante bien), este gráfico muestra una **desviación severa y sistemática**.
-  - La gran mayoría de los puntos (la curva azul) se encuentran muy por encima de la línea roja de referencia.
-  - Esto indica que los datos **no siguen una distribución normal multivariada**. Las colas de la distribución de los predictores son mucho más "pesadas" que las de una distribución teórica.
-  - Las observaciones etiquetadas (como la **977, 974, 976 y 975**) representan semanas con combinaciones extremadamente atípicas de retornos, volumen y año; probablemente coincidiendo con *shocks* financieros importantes (p.ej., la crisis de 2008).
-  - Esto refuerza la idea de que los modelos lineales (incluida la regresión logística) pueden tener dificultades para manejar la naturaleza extrema de los datos financieros.
+-   A diferencia del gráfico del conjunto `Fishing` (que seguía la línea roja bastante bien), este gráfico muestra una **desviación severa y sistemática**.
+-   La gran mayoría de los puntos (la curva azul) se encuentran muy por encima de la línea roja de referencia.
+-   Esto indica que los datos **no siguen una distribución normal multivariada**. Las colas de la distribución de los predictores son mucho más "pesadas" que las de una distribución teórica.
+-   Las observaciones etiquetadas (como la **977, 974, 976 y 975**) representan semanas con combinaciones extremadamente atípicas de retornos, volumen y año; probablemente coincidiendo con *shocks* financieros importantes (p.ej., la crisis de 2008).
+-   Esto refuerza la idea de que los modelos lineales (incluida la regresión logística) pueden tener dificultades para manejar la naturaleza extrema de los datos financieros.
 
------
+------------------------------------------------------------------------
 
 ## Cuestión N°1
 
@@ -1716,13 +1701,9 @@ Sus componentes son:
 
 1.  **Componente aleatoria**: La variable de respuesta $Y_i$ (que representa 'Up' o 'Down') sigue una distribución de Bernoulli, donde la probabilidad de éxito (ej. 'Up') es $p_i$. $Y_i \sim \text{Bernoulli}(p_i)$.
 
-2.  **Componente sistemática**: Es el predictor lineal $\eta_i$, que es una combinación lineal de las variables predictoras (los 5 `Lag` y `Volume`).
-    $$\eta_i = \beta_0 + \beta_1 \text{Lag1}_i + \beta_2 \text{Lag2}_i + \beta_3 \text{Lag3}_i + \beta_4 \text{Lag4}_i + \beta_5 \text{Lag5}_i + \beta_6 \text{Volume}_i$$
+2.  **Componente sistemática**: Es el predictor lineal $\eta_i$, que es una combinación lineal de las variables predictoras (los 5 `Lag` y `Volume`). $$\eta_i = \beta_0 + \beta_1 \text{Lag1}_i + \beta_2 \text{Lag2}_i + \beta_3 \text{Lag3}_i + \beta_4 \text{Lag4}_i + \beta_5 \text{Lag5}_i + \beta_6 \text{Volume}_i$$
 
-3.  **Función de enlace (logit)**: La regresión logística utiliza la función "logit" para conectar la probabilidad $p_i$ con el predictor lineal $\eta_i$. El logit es el logaritmo de las "odds" (probabilidad de éxito / probabilidad de fracaso).
-    $$g(p_i) = \log\left(\frac{p_i}{1-p_i}\right) = \eta_i$$
-    Invirtiendo esta relación, la probabilidad de que el mercado suba ('Up') se modela como:
-    $$p_i = P(Y_i = \text{'Up'} | X_i) = \frac{e^{\eta_i}}{1 + e^{\eta_i}}$$
+3.  **Función de enlace (logit)**: La regresión logística utiliza la función "logit" para conectar la probabilidad $p_i$ con el predictor lineal $\eta_i$. El logit es el logaritmo de las "odds" (probabilidad de éxito / probabilidad de fracaso). $$g(p_i) = \log\left(\frac{p_i}{1-p_i}\right) = \eta_i$$ Invirtiendo esta relación, la probabilidad de que el mercado suba ('Up') se modela como: $$p_i = P(Y_i = \text{'Up'} | X_i) = \frac{e^{\eta_i}}{1 + e^{\eta_i}}$$
 
 Para determinar la significancia estadística, examinamos el **valor-p** de cada coeficiente. Un valor-p bajo (comúnmente $p < 0.05$) sugiere que podemos rechazar la hipótesis nula de que el coeficiente es cero (es decir, que el predictor no tiene efecto), indicando que la variable es un predictor estadísticamente significativo.
 
@@ -1764,13 +1745,13 @@ pretty_tibble(coef_table_log_1)
 
 Para responder a la pregunta, analizamos la columna `p.value` (o `s_value`) de la tabla de coeficientes:
 
-  - **`(Intercept)`**: $p = 0.0019$ ($s = 9.04$). Es estadísticamente significativo.
-  - **`Lag1`**: $p = 0.118$ ($s = 3.08$). No es estadísticamente significativo.
-  - **`Lag2`**: $p = 0.0296$ ($s = 5.08$). Este valor es menor que $0.05$, indicando que **`Lag2` es estadísticamente significativo**.
-  - **`Lag3`**: $p = 0.547$ ($s = 0.87$). No es estadísticamente significativo.
-  - **`Lag4`**: $p = 0.294$ ($s = 1.77$). No es estadísticamente significativo.
-  - **`Lag5`**: $p = 0.583$ ($s = 0.78$). No es estadísticamente significativo.
-  - **`Volume`**: $p = 0.538$ ($s = 0.90$). No es estadísticamente significativo.
+-   **`(Intercept)`**: $p = 0.0019$ ($s = 9.04$). Es estadísticamente significativo.
+-   **`Lag1`**: $p = 0.118$ ($s = 3.08$). No es estadísticamente significativo.
+-   **`Lag2`**: $p = 0.0296$ ($s = 5.08$). Este valor es menor que $0.05$, indicando que **`Lag2` es estadísticamente significativo**.
+-   **`Lag3`**: $p = 0.547$ ($s = 0.87$). No es estadísticamente significativo.
+-   **`Lag4`**: $p = 0.294$ ($s = 1.77$). No es estadísticamente significativo.
+-   **`Lag5`**: $p = 0.583$ ($s = 0.78$). No es estadísticamente significativo.
+-   **`Volume`**: $p = 0.538$ ($s = 0.90$). No es estadísticamente significativo.
 
 **Respuesta:**
 
@@ -1780,7 +1761,7 @@ El coeficiente positivo para `Lag2` (`estimate` = 0.0584) y el `odds_ratio` de *
 
 Sin embargo, es importante notar que el resto de los predictores, incluidos todos los demás `Lag` y el `Volume`, no muestran evidencia estadística de tener una relación con la dirección del mercado de la semana actual en este modelo. Esto se alinea con lo que observamos visualmente en el EDA, donde las distribuciones de 'Up' y 'Down' estaban casi perfectamente superpuestas para todas las variables `Lag`.
 
------
+------------------------------------------------------------------------
 
 ## Cuestión N°2
 
@@ -1792,26 +1773,24 @@ Para evaluar un modelo de clasificación binaria como el nuestro, no basta con m
 
 1.  **Matriz de Confusión**: Es una tabla que compara las clases reales (los datos de `Direction`) con las clases predichas por el modelo. Para obtener "clases predichas" (texto 'Up' o 'Down') desde "probabilidades predichas" (números entre 0 y 1), debemos usar un **umbral de corte**. El umbral estándar es 0.5 (si $P(\text{Up}) > 0.5$, predecimos 'Up').
 
-    | | Predicho 'Up' | Predicho 'Down' |
-    | :--- | :--- | :--- |
-    | **Real 'Up'** | Verdaderos Positivos (TP) | Falsos Negativos (FN) |
-    | **Real 'Down'** | Falsos Positivos (FP) | Verdaderos Negativos (TN) |
+    |                 | Predicho 'Up'             | Predicho 'Down'           |
+    |:----------------|:--------------------------|:--------------------------|
+    | **Real 'Up'**   | Verdaderos Positivos (TP) | Falsos Negativos (FN)     |
+    | **Real 'Down'** | Falsos Positivos (FP)     | Verdaderos Negativos (TN) |
 
-2.  **Precisión (Accuracy)**: Es la métrica más simple. Mide el porcentaje de predicciones correctas.
-    $$\text{Precisión} = \frac{TP + TN}{\text{Total de Observaciones}}$$
-    *Advertencia*: La precisión puede ser engañosa si las clases están desbalanceadas. Una métrica de referencia útil es la **Tasa de Error Nula (Null Error Rate)**, que es la precisión que obtendríamos si siempre predijéramos la clase más frecuente. En nuestro caso (55.6% 'Up'), la tasa de error nula es 55.6%. Un buen modelo debe superar esto.
+2.  **Precisión (Accuracy)**: Es la métrica más simple. Mide el porcentaje de predicciones correctas. $$\text{Precisión} = \frac{TP + TN}{\text{Total de Observaciones}}$$ *Advertencia*: La precisión puede ser engañosa si las clases están desbalanceadas. Una métrica de referencia útil es la **Tasa de Error Nula (Null Error Rate)**, que es la precisión que obtendríamos si siempre predijéramos la clase más frecuente. En nuestro caso (55.6% 'Up'), la tasa de error nula es 55.6%. Un buen modelo debe superar esto.
 
 3.  **Curva ROC (Receiver Operating Characteristic)**: Es una herramienta gráfica superior. En lugar de usar un solo umbral (como 0.5), grafica el desempeño del modelo en *todos los umbrales posibles*.
 
-      * **Eje Y**: Tasa de Verdaderos Positivos (Sensibilidad) = $\frac{TP}{TP + FN}$
-      * **Eje X**: Tasa de Falsos Positivos (1 - Especificidad) = $\frac{FP}{FP + TN}$
-      * Una línea diagonal (de 0,0 a 1,1) representa el azar (un modelo inútil). Un buen modelo tiene una curva que se "abomba" hacia la esquina superior izquierda.
+    -   **Eje Y**: Tasa de Verdaderos Positivos (Sensibilidad) = $\frac{TP}{TP + FN}$
+    -   **Eje X**: Tasa de Falsos Positivos (1 - Especificidad) = $\frac{FP}{FP + TN}$
+    -   Una línea diagonal (de 0,0 a 1,1) representa el azar (un modelo inútil). Un buen modelo tiene una curva que se "abomba" hacia la esquina superior izquierda.
 
 4.  **AUC (Area Under the Curve)**: Es el área bajo la curva ROC. Cuantifica la capacidad *global* del modelo para discriminar entre las dos clases.
 
-      * **AUC = 1.0**: Clasificador perfecto.
-      * **AUC = 0.5**: Clasificador inútil (equivale al azar).
-      * **AUC \> 0.7**: Se considera un modelo aceptable.
+    -   **AUC = 1.0**: Clasificador perfecto.
+    -   **AUC = 0.5**: Clasificador inútil (equivale al azar).
+    -   **AUC \> 0.7**: Se considera un modelo aceptable.
 
 ### Cálculo de la matriz de confusión y precisión
 
@@ -1919,22 +1898,21 @@ ggplot(roc_data, aes(x = Specificity_Inv, y = sensitivity)) +
 
 1.  **Matriz de Confusión y Precisión**:
 
-      * La precisión del modelo es **56.11%**.
-      * La precisión de línea base (Tasa Nula), que obtendríamos si *siempre* adivináramos 'Up', es **55.56%**.
-      * **Conclusión**: El modelo es solo un **0.55%** mejor que simplemente adivinar la clase más frecuente. Su desempeño es extremadamente pobre.
-      * La matriz de confusión revela *por qué*: el modelo predijo 'Up' 987 veces (430 + 557) y 'Down' 102 veces (54 + 48). Sin embargo, tiene una tasa muy alta de **Falsos Positivos (430)** (predijo 'Up' cuando en realidad fue 'Down') y una tasa muy baja de **Verdaderos Negativos (solo 54)** (predijo 'Down' y acertó). El modelo es terrible para identificar las semanas de 'bajada'.
+    -   La precisión del modelo es **56.11%**.
+    -   La precisión de línea base (Tasa Nula), que obtendríamos si *siempre* adivináramos 'Up', es **55.56%**.
+    -   **Conclusión**: El modelo es solo un **0.55%** mejor que simplemente adivinar la clase más frecuente. Su desempeño es extremadamente pobre.
+    -   La matriz de confusión revela *por qué*: el modelo predijo 'Up' 987 veces (430 + 557) y 'Down' 102 veces (54 + 48). Sin embargo, tiene una tasa muy alta de **Falsos Positivos (430)** (predijo 'Up' cuando en realidad fue 'Down') y una tasa muy baja de **Verdaderos Negativos (solo 54)** (predijo 'Down' y acertó). El modelo es terrible para identificar las semanas de 'bajada'.
 
 2.  **Curva ROC y AUC**:
 
-      * La curva ROC (línea azul) está **extremadamente cerca de la línea diagonal roja** (que representa el azar).
-      * El valor **AUC es 0.5537**. Un valor de 0.5 es azar y 1.0 es perfecto. Este valor confirma que la capacidad del modelo para discriminar entre una semana 'Up' y una 'Down' es casi nula.
+    -   La curva ROC (línea azul) está **extremadamente cerca de la línea diagonal roja** (que representa el azar).
+    -   El valor **AUC es 0.5537**. Un valor de 0.5 es azar y 1.0 es perfecto. Este valor confirma que la capacidad del modelo para discriminar entre una semana 'Up' y una 'Down' es casi nula.
 
-**Comentario Final**:
-El modelo logístico, utilizando los cinco `Lag` y `Volume`, **no es útil para la predicción**.
+**Comentario Final**: El modelo logístico, utilizando los cinco `Lag` y `Volume`, **no es útil para la predicción**.
 
 Aunque `Lag2` fue "estadísticamente significativo" (con un $p=0.029$), su efecto es tan débil que no se traduce en un poder predictivo real. La precisión del modelo es apenas mejor que adivinar al azar, y el AUC de 0.554 confirma que el modelo no tiene una capacidad real para distinguir entre los días de subida y bajada. Esto es muy común en los datos financieros, que a menudo se asemejan a un "paseo aleatorio" (random walk).
 
------
+------------------------------------------------------------------------
 
 ## Cuestión N°3
 
@@ -2073,23 +2051,22 @@ ggplot(roc_data_test, aes(x = Specificity_Inv, y = sensitivity)) +
 
 1.  **Precisión y Matriz de Confusión**:
 
-      * La precisión del modelo en los datos de prueba (2009-2010) fue del **62.5%**.
-      * La precisión de línea base (Tasa Nula) para este período fue del **58.65%** (correspondiente a adivinar siempre 'Up', la clase más frecuente en esos dos años).
-      * **Conclusión**: El modelo logró una precisión casi 4 puntos porcentuales por encima de la línea base, lo que indica un poder predictivo real (aunque modesto) *utilizando el umbral de 0.5*.
-      * La matriz de confusión muestra que el modelo tuvo éxito:
-          * Predijo correctamente **56** de las 61 semanas 'Up' (Verdaderos Positivos).
-          * Predijo correctamente **9** de las 43 semanas 'Down' (Verdaderos Negativos).
-      * El principal error del modelo fue predecir 'Up' en 34 semanas que en realidad fueron 'Down' (Falsos Positivos). Esto sugiere que el modelo está sesgado hacia predecir 'Up', pero dado que acierta la mayoría de las veces (62.5%), es un sesgo rentable.
+    -   La precisión del modelo en los datos de prueba (2009-2010) fue del **62.5%**.
+    -   La precisión de línea base (Tasa Nula) para este período fue del **58.65%** (correspondiente a adivinar siempre 'Up', la clase más frecuente en esos dos años).
+    -   **Conclusión**: El modelo logró una precisión casi 4 puntos porcentuales por encima de la línea base, lo que indica un poder predictivo real (aunque modesto) *utilizando el umbral de 0.5*.
+    -   La matriz de confusión muestra que el modelo tuvo éxito:
+        -   Predijo correctamente **56** de las 61 semanas 'Up' (Verdaderos Positivos).
+        -   Predijo correctamente **9** de las 43 semanas 'Down' (Verdaderos Negativos).
+    -   El principal error del modelo fue predecir 'Up' en 34 semanas que en realidad fueron 'Down' (Falsos Positivos). Esto sugiere que el modelo está sesgado hacia predecir 'Up', pero dado que acierta la mayoría de las veces (62.5%), es un sesgo rentable.
 
 2.  **Curva ROC y AUC**:
 
-      * El **AUC en el conjunto de prueba fue de 0.4537**.
-      * Este valor está **por debajo de 0.5 (azar)**. La curva ROC se sitúa visiblemente por debajo de la línea diagonal roja, lo que indica que la capacidad *global* de discriminación del modelo (a través de todos los umbrales) es peor que adivinar al azar.
+    -   El **AUC en el conjunto de prueba fue de 0.4537**.
+    -   Este valor está **por debajo de 0.5 (azar)**. La curva ROC se sitúa visiblemente por debajo de la línea diagonal roja, lo que indica que la capacidad *global* de discriminación del modelo (a través de todos los umbrales) es peor que adivinar al azar.
 
-**Comentario Final**:
-Los resultados son mixtos y revelan una discrepancia entre las métricas.
+**Comentario Final**: Los resultados son mixtos y revelan una discrepancia entre las métricas.
 
-  * Por un lado, la **precisión (62.5%)** con un umbral de 0.5 es *mejor* que la línea base (58.65%). Esto sugiere que, con este umbral específico, la estrategia de usar `Lag2` fue modestamente rentable en 2009-2010.
-  * Por otro lado, el **AUC (0.4537)** es *peor* que el azar (0.5). Esto indica que el modelo no es un buen discriminador; sus probabilidades asignadas a las clases 'Up' y 'Down' no son fiables para separar las clases en general.
+-   Por un lado, la **precisión (62.5%)** con un umbral de 0.5 es *mejor* que la línea base (58.65%). Esto sugiere que, con este umbral específico, la estrategia de usar `Lag2` fue modestamente rentable en 2009-2010.
+-   Por otro lado, el **AUC (0.4537)** es *peor* que el azar (0.5). Esto indica que el modelo no es un buen discriminador; sus probabilidades asignadas a las clases 'Up' y 'Down' no son fiables para separar las clases en general.
 
 En resumen, aunque el modelo simple (solo `Lag2`) superó a la línea base en precisión con el umbral estándar, su pobre AUC sugiere que la significancia estadística ($p=0.043$) encontrada en el conjunto de entrenamiento no se tradujo en un poder de discriminación robusto en los datos de prueba.
